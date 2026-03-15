@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 
@@ -105,8 +105,7 @@ def rk4_step(
     new_state.normalize_quaternion()
 
     # NaN/Inf check
-    for arr in [new_state.position_eci, new_state.velocity_eci,
-                new_state.quaternion, new_state.angular_velocity_body]:
+    for arr in [new_state.position_eci, new_state.velocity_eci, new_state.quaternion, new_state.angular_velocity_body]:
         if not np.all(np.isfinite(arr)):
             raise RuntimeError(f"NaN/Inf detected in integrator at t={new_state.time_s:.3f}s")
     if not np.isfinite(new_state.mass_kg):

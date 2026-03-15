@@ -55,9 +55,7 @@ def _mean_wind_fraction(altitude_m: float) -> float:
         return 1.0 + (_WIND_PEAK_FACTOR - 1.0) * (altitude_m / _WIND_PEAK_ALT_M)
     if altitude_m <= _WIND_CEILING_M:
         # Linear decay from peak to zero
-        return _WIND_PEAK_FACTOR * (
-            1.0 - (altitude_m - _WIND_PEAK_ALT_M) / (_WIND_CEILING_M - _WIND_PEAK_ALT_M)
-        )
+        return _WIND_PEAK_FACTOR * (1.0 - (altitude_m - _WIND_PEAK_ALT_M) / (_WIND_CEILING_M - _WIND_PEAK_ALT_M))
     return 0.0
 
 
@@ -77,11 +75,13 @@ def _ned_to_ecef_rotation(lat_rad: float, lon_rad: float) -> np.ndarray:
     cos_lon = math.cos(lon_rad)
 
     # Transpose of the ECEF->NED matrix in reference_frames.py
-    return np.array([
-        [-sin_lat * cos_lon, -sin_lon, -cos_lat * cos_lon],
-        [-sin_lat * sin_lon, cos_lon, -cos_lat * sin_lon],
-        [cos_lat, 0.0, -sin_lat],
-    ])
+    return np.array(
+        [
+            [-sin_lat * cos_lon, -sin_lon, -cos_lat * cos_lon],
+            [-sin_lat * sin_lon, cos_lon, -cos_lat * sin_lon],
+            [cos_lat, 0.0, -sin_lat],
+        ]
+    )
 
 
 def wind_velocity_eci(

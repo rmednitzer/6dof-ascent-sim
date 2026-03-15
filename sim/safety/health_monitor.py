@@ -7,7 +7,7 @@ telemetry, FTS) can inspect each timestep.
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -121,18 +121,10 @@ class HealthMonitor:
             The updated :class:`HealthVector`.
         """
         self.health.ekf_covariance = self._assess_ekf(ekf_pos_covariance)
-        self.health.dynamic_pressure = self._assess_dynamic_pressure(
-            dynamic_pressure_pa
-        )
-        self.health.propellant_margin = self._assess_propellant(
-            propellant_remaining_kg, propellant_initial_kg
-        )
-        self.health.sensor_status = self._assess_sensors(
-            sensor_degradation_flags or {}
-        )
-        self.health.engine_health = self._assess_engine(
-            commanded_thrust_n, actual_thrust_n
-        )
+        self.health.dynamic_pressure = self._assess_dynamic_pressure(dynamic_pressure_pa)
+        self.health.propellant_margin = self._assess_propellant(propellant_remaining_kg, propellant_initial_kg)
+        self.health.sensor_status = self._assess_sensors(sensor_degradation_flags or {})
+        self.health.engine_health = self._assess_engine(commanded_thrust_n, actual_thrust_n)
         return self.health
 
     def overall_status(self) -> HealthStatus:

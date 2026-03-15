@@ -151,12 +151,8 @@ class BoundaryEnforcer:
         original_yaw = yaw_cmd_deg
 
         # --- Deflection limits ---
-        pitch_cmd_deg = float(
-            np.clip(pitch_cmd_deg, -TVC_MAX_DEFLECTION_DEG, TVC_MAX_DEFLECTION_DEG)
-        )
-        yaw_cmd_deg = float(
-            np.clip(yaw_cmd_deg, -TVC_MAX_DEFLECTION_DEG, TVC_MAX_DEFLECTION_DEG)
-        )
+        pitch_cmd_deg = float(np.clip(pitch_cmd_deg, -TVC_MAX_DEFLECTION_DEG, TVC_MAX_DEFLECTION_DEG))
+        yaw_cmd_deg = float(np.clip(yaw_cmd_deg, -TVC_MAX_DEFLECTION_DEG, TVC_MAX_DEFLECTION_DEG))
         if pitch_cmd_deg != original_pitch or yaw_cmd_deg != original_yaw:
             was_clamped = True
             violation = "tvc_deflection_limit"

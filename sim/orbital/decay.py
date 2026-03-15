@@ -8,12 +8,8 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
-
 from sim.config import EARTH_MU, EARTH_RADIUS_M
-from sim.core.state import VehicleState
 from sim.orbital.propagator import OrbitalElements
-
 
 # ---------------------------------------------------------------------------
 # Exponential atmosphere model
@@ -102,6 +98,7 @@ def _scale_height_at_altitude(altitude_m: float) -> float:
 # Ballistic coefficient
 # ---------------------------------------------------------------------------
 
+
 def ballistic_coefficient(
     mass_kg: float,
     cd: float = 2.2,
@@ -131,6 +128,7 @@ def ballistic_coefficient(
 # ---------------------------------------------------------------------------
 # King-Hele lifetime estimation
 # ---------------------------------------------------------------------------
+
 
 def estimate_lifetime(
     elements: OrbitalElements,
@@ -217,10 +215,10 @@ def estimate_lifetime(
             break
 
         # Orbital period
-        period = 2.0 * math.pi * math.sqrt(a ** 3 / mu)
+        period = 2.0 * math.pi * math.sqrt(a**3 / mu)
 
         # Periapsis velocity (vis-viva)
-        v_p = math.sqrt(mu * (2.0 / r_periapsis - 1.0 / a))
+        _v_p = math.sqrt(mu * (2.0 / r_periapsis - 1.0 / a))  # noqa: F841
 
         # King-Hele: change in semi-major axis per orbit
         # For an elliptical orbit: da/rev = -2*pi * rho_p * (a^2 / BC) * I0(e*a/H)
@@ -233,24 +231,25 @@ def estimate_lifetime(
             # For small arguments: I0(x) ~ 1 + x^2/4 + ...
             # For larger arguments: I0(x) ~ exp(x) / sqrt(2*pi*x)
             if eaH < 2.0:
-                bessel_factor = 1.0 + eaH ** 2 / 4.0 + eaH ** 4 / 64.0
+                bessel_factor = 1.0 + eaH**2 / 4.0 + eaH**4 / 64.0
             else:
                 bessel_factor = math.exp(eaH) / math.sqrt(2.0 * math.pi * eaH)
 
-            da_per_rev = -2.0 * math.pi * (a ** 2 / bc) * rho_p * bessel_factor * math.exp(-eaH)
+            da_per_rev = -2.0 * math.pi * (a**2 / bc) * rho_p * bessel_factor * math.exp(-eaH)
         else:
             # Very high eccentricity — the exponential terms dominate
-            da_per_rev = -2.0 * math.pi * (a ** 2 / bc) * rho_p / math.sqrt(2.0 * math.pi * eaH)
+            da_per_rev = -2.0 * math.pi * (a**2 / bc) * rho_p / math.sqrt(2.0 * math.pi * eaH)
 
         # Eccentricity change per orbit (King-Hele, first order)
         if eaH < 50.0 and eaH > 0.01:
             if eaH < 2.0:
-                bessel_i1 = eaH / 2.0 * (1.0 + eaH ** 2 / 8.0 + eaH ** 4 / 192.0)
+                bessel_i1 = eaH / 2.0 * (1.0 + eaH**2 / 8.0 + eaH**4 / 192.0)
             else:
                 bessel_i1 = math.exp(eaH) / math.sqrt(2.0 * math.pi * eaH)
 
-            de_per_rev = -(1.0 - e) * da_per_rev / a - (2.0 * math.pi * rho_p * a / bc
-                          * math.exp(-eaH) * (bessel_i1 - bessel_factor))
+            de_per_rev = -(1.0 - e) * da_per_rev / a - (
+                2.0 * math.pi * rho_p * a / bc * math.exp(-eaH) * (bessel_i1 - bessel_factor)
+            )
         else:
             # Approximate: eccentricity decays proportionally to a
             de_per_rev = -e * abs(da_per_rev) / a if a > 0 else 0.0

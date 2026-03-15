@@ -13,10 +13,10 @@ import pytest
 from sim.core.integrator import StateDot, rk4_step
 from sim.core.state import VehicleState
 
-
 # ---------------------------------------------------------------------------
 # StateDot helpers
 # ---------------------------------------------------------------------------
+
 
 class TestStateDot:
     """Tests for StateDot construction, scale, and add operations."""
@@ -58,6 +58,7 @@ class TestStateDot:
 # ---------------------------------------------------------------------------
 # RK4 integrator correctness
 # ---------------------------------------------------------------------------
+
 
 class TestRK4Step:
     """Verify RK4 integration against known analytical solutions."""

@@ -7,12 +7,10 @@ triggers for cross-range, attitude, and structural violations.
 import math
 
 import numpy as np
-import numpy.testing as npt
-import pytest
 
-from sim.safety.fts import FlightTerminationSystem, FTSState
-from sim.safety.boundary_enforcer import BoundaryEnforcer
 from sim import config
+from sim.safety.boundary_enforcer import BoundaryEnforcer
+from sim.safety.fts import FlightTerminationSystem
 
 
 def _nominal_args() -> dict:
@@ -68,11 +66,13 @@ class TestFTSCrossRange:
         args = _nominal_args()
         # Move the position far from the nominal plane in the normal direction
         offset = config.FTS_CROSSRANGE_LIMIT_M + 10000.0
-        args["position_ecef"] = np.array([
-            config.EARTH_RADIUS_M,
-            offset,  # cross-range in the y direction (plane normal)
-            0.0,
-        ])
+        args["position_ecef"] = np.array(
+            [
+                config.EARTH_RADIUS_M,
+                offset,  # cross-range in the y direction (plane normal)
+                0.0,
+            ]
+        )
 
         triggered = fts.evaluate(**args)
         assert triggered is True
@@ -86,11 +86,13 @@ class TestFTSCrossRange:
 
         args = _nominal_args()
         # Small offset in the normal direction
-        args["position_ecef"] = np.array([
-            config.EARTH_RADIUS_M,
-            1000.0,  # well within 200 km limit
-            0.0,
-        ])
+        args["position_ecef"] = np.array(
+            [
+                config.EARTH_RADIUS_M,
+                1000.0,  # well within 200 km limit
+                0.0,
+            ]
+        )
 
         assert fts.evaluate(**args) is False
 
@@ -101,11 +103,13 @@ class TestFTSCrossRange:
 
         args = _nominal_args()
         args["altitude_m"] = 150_000.0  # above 100 km
-        args["position_ecef"] = np.array([
-            config.EARTH_RADIUS_M,
-            config.FTS_CROSSRANGE_LIMIT_M + 50000.0,
-            0.0,
-        ])
+        args["position_ecef"] = np.array(
+            [
+                config.EARTH_RADIUS_M,
+                config.FTS_CROSSRANGE_LIMIT_M + 50000.0,
+                0.0,
+            ]
+        )
 
         # Should NOT trigger because altitude > 100 km
         assert fts.evaluate(**args) is False
@@ -137,9 +141,7 @@ class TestFTSAttitude:
         args = _nominal_args()
         # 5 degree rotation about z-axis (well under 90 deg limit)
         half_angle = math.radians(2.5)
-        args["q_actual"] = np.array([
-            0.0, 0.0, math.sin(half_angle), math.cos(half_angle)
-        ])
+        args["q_actual"] = np.array([0.0, 0.0, math.sin(half_angle), math.cos(half_angle)])
 
         assert fts.evaluate(**args) is False
 

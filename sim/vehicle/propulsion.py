@@ -12,8 +12,8 @@ from sim.vehicle.vehicle import StageConfig
 # ---------------------------------------------------------------------------
 # Physical constants (module-level for convenience)
 # ---------------------------------------------------------------------------
-G0: float = config.G0          # 9.80665 m/s^2
-P_SL: float = config.P_SL      # 101325.0 Pa
+G0: float = config.G0  # 9.80665 m/s^2
+P_SL: float = config.P_SL  # 101325.0 Pa
 
 # Transient ramp duration (seconds) for ignition and shutdown
 IGNITION_RAMP_TIME: float = 0.5
@@ -23,6 +23,7 @@ SHUTDOWN_RAMP_TIME: float = 0.5
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
+
 
 def _pressure_fraction(p_ambient: float) -> float:
     """Normalised ambient pressure in [0, 1]."""
@@ -90,6 +91,7 @@ def mass_flow_rate(thrust: float, isp: float) -> float:
 # ---------------------------------------------------------------------------
 # Engine model (stateful)
 # ---------------------------------------------------------------------------
+
 
 class EngineModel:
     """Single-engine model with throttle, ignition, and shutdown transients.
@@ -192,10 +194,7 @@ class EngineModel:
         if self._transient_duration > 0.0:
             self._transient_elapsed += dt
             frac = min(1.0, self._transient_elapsed / self._transient_duration)
-            level = (
-                self._transient_start_level
-                + (self._transient_end_level - self._transient_start_level) * frac
-            )
+            level = self._transient_start_level + (self._transient_end_level - self._transient_start_level) * frac
             self._effective_throttle = max(0.0, min(1.0, level))
 
             # Transient complete

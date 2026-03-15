@@ -10,8 +10,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from sim.environment.gravity import gravitational_acceleration
 from sim import config
+from sim.environment.gravity import gravitational_acceleration
 
 
 class TestGravityMagnitude:

@@ -70,7 +70,7 @@ def compute_statistics(results: list[MonteCarloResult]) -> dict:
 
     peak_q = np.array([r.peak_q_pa for r in results])
     peak_g = np.array([r.peak_axial_g for r in results])
-    peak_ekf = np.array([r.peak_ekf_uncertainty_m for r in results])
+    _peak_ekf = np.array([r.peak_ekf_uncertainty_m for r in results])  # noqa: F841
     clamps = np.array([r.boundary_clamp_count for r in results])
 
     stats["limit_proximity"] = {
@@ -112,23 +112,31 @@ def print_summary(results: list[MonteCarloResult]) -> None:
 
     if "insertion_altitude" in stats:
         ia = stats["insertion_altitude"]
-        print(f"\nInsertion accuracy (successful runs):")
-        print(f"  Altitude:  mean {ia['mean_km']:.1f} km, std {ia['std_km']:.1f} km, "
-              f"3σ range [{ia['three_sigma_low_km']:.1f}, {ia['three_sigma_high_km']:.1f}] km")
+        print("\nInsertion accuracy (successful runs):")
+        print(
+            f"  Altitude:  mean {ia['mean_km']:.1f} km, std {ia['std_km']:.1f} km, "
+            f"3σ range [{ia['three_sigma_low_km']:.1f}, {ia['three_sigma_high_km']:.1f}] km"
+        )
     if "insertion_velocity" in stats:
         iv = stats["insertion_velocity"]
-        print(f"  Velocity:  mean {iv['mean_ms']:.1f} m/s, std {iv['std_ms']:.1f} m/s, "
-              f"3σ range [{iv['three_sigma_low_ms']:.1f}, {iv['three_sigma_high_ms']:.1f}] m/s")
+        print(
+            f"  Velocity:  mean {iv['mean_ms']:.1f} m/s, std {iv['std_ms']:.1f} m/s, "
+            f"3σ range [{iv['three_sigma_low_ms']:.1f}, {iv['three_sigma_high_ms']:.1f}] m/s"
+        )
     if "insertion_fpa" in stats:
         fp = stats["insertion_fpa"]
         print(f"  FPA:       mean {fp['mean_deg']:.2f}°, std {fp['std_deg']:.2f}°")
 
     lp = stats["limit_proximity"]
-    print(f"\nLimit proximity (all runs):")
-    print(f"  Peak Q:    mean {lp['peak_q_pct']['mean']:.1f}%, "
-          f"max {lp['peak_q_pct']['max']:.1f}%, P99 {lp['peak_q_pct']['p99']:.1f}%")
-    print(f"  Peak G:    mean {lp['peak_g_pct']['mean']:.1f}%, "
-          f"max {lp['peak_g_pct']['max']:.1f}%, P99 {lp['peak_g_pct']['p99']:.1f}%")
+    print("\nLimit proximity (all runs):")
+    print(
+        f"  Peak Q:    mean {lp['peak_q_pct']['mean']:.1f}%, "
+        f"max {lp['peak_q_pct']['max']:.1f}%, P99 {lp['peak_q_pct']['p99']:.1f}%"
+    )
+    print(
+        f"  Peak G:    mean {lp['peak_g_pct']['mean']:.1f}%, "
+        f"max {lp['peak_g_pct']['max']:.1f}%, P99 {lp['peak_g_pct']['p99']:.1f}%"
+    )
 
     bc = stats["boundary_clamps"]
     print(f"\nBoundary clamps: mean {bc['mean']:.1f}, max {bc['max']}")
@@ -142,6 +150,7 @@ def generate_plots(results: list[MonteCarloResult], output_dir: str = "output/mo
         output_dir: Directory for plot output.
     """
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -154,15 +163,14 @@ def generate_plots(results: list[MonteCarloResult], output_dir: str = "output/mo
         return
 
     # Dispersion ellipse: altitude vs velocity
-    alts = np.array([r.insertion_altitude_m / 1000 for r in successful
-                     if r.insertion_altitude_m is not None])
-    vels = np.array([r.insertion_velocity_ms for r in successful
-                     if r.insertion_velocity_ms is not None])
+    alts = np.array([r.insertion_altitude_m / 1000 for r in successful if r.insertion_altitude_m is not None])
+    vels = np.array([r.insertion_velocity_ms for r in successful if r.insertion_velocity_ms is not None])
 
     if len(alts) > 1 and len(vels) > 1:
         fig, ax = plt.subplots(figsize=(10, 8))
         ax.scatter(vels, alts, alpha=0.3, s=10, label="Runs")
         from sim import config
+
         ax.axhline(config.TARGET_ALTITUDE_M / 1000, color="r", linestyle="--", label="Target altitude")
         ax.axvline(config.TARGET_VELOCITY_MS, color="g", linestyle="--", label="Target velocity")
         ax.set_xlabel("Insertion Velocity (m/s)")
@@ -175,6 +183,7 @@ def generate_plots(results: list[MonteCarloResult], output_dir: str = "output/mo
 
     # Limit proximity CDF
     from sim import config
+
     peak_q_frac = np.array([r.peak_q_pa / config.MAX_Q_PA for r in results])
     peak_g_frac = np.array([r.peak_axial_g / config.MAX_AXIAL_G for r in results])
 
@@ -218,7 +227,10 @@ def generate_plots(results: list[MonteCarloResult], output_dir: str = "output/mo
             ax.scatter(
                 [r.total_time_s for r in subset],
                 [r.peak_q_pa / 1000 for r in subset],
-                c=color, alpha=0.4, s=10, label=outcome,
+                c=color,
+                alpha=0.4,
+                s=10,
+                label=outcome,
             )
     ax.set_xlabel("Total Simulation Time (s)")
     ax.set_ylabel("Peak Dynamic Pressure (kPa)")

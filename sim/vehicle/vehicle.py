@@ -8,27 +8,26 @@ convenience properties for the guidance / dynamics loops.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 from sim import config
-
 
 # ---------------------------------------------------------------------------
 # Stage configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class StageConfig:
     """Immutable description of a single propulsive stage."""
 
-    dry_mass: float        # kg — structural / inert mass
-    propellant: float      # kg — total usable propellant
-    thrust_vac: float      # N  — vacuum thrust
-    thrust_sl: float       # N  — sea-level thrust
-    isp_vac: float         # s  — vacuum specific impulse
-    isp_sl: float          # s  — sea-level specific impulse
-    burn_time: float       # s  — nominal burn duration
-    throttle_min: float    # –  — minimum throttle fraction [0, 1]
+    dry_mass: float  # kg — structural / inert mass
+    propellant: float  # kg — total usable propellant
+    thrust_vac: float  # N  — vacuum thrust
+    thrust_sl: float  # N  — sea-level thrust
+    isp_vac: float  # s  — vacuum specific impulse
+    isp_sl: float  # s  — sea-level specific impulse
+    burn_time: float  # s  — nominal burn duration
+    throttle_min: float  # –  — minimum throttle fraction [0, 1]
 
 
 # ---------------------------------------------------------------------------
@@ -50,17 +49,18 @@ STAGE_2 = StageConfig(
     dry_mass=config.S2_DRY_MASS_KG,
     propellant=config.S2_PROPELLANT_KG,
     thrust_vac=config.S2_THRUST_VAC_N,
-    thrust_sl=config.S2_THRUST_VAC_N,       # S2 operates in vacuum — SL ≈ vac
+    thrust_sl=config.S2_THRUST_VAC_N,  # S2 operates in vacuum — SL ≈ vac
     isp_vac=config.S2_ISP_VAC_S,
-    isp_sl=config.S2_ISP_VAC_S,             # Same assumption
+    isp_sl=config.S2_ISP_VAC_S,  # Same assumption
     burn_time=config.S2_BURN_TIME_S,
-    throttle_min=0.4,                        # Conservative default
+    throttle_min=0.4,  # Conservative default
 )
 
 
 # ---------------------------------------------------------------------------
 # Vehicle
 # ---------------------------------------------------------------------------
+
 
 class Vehicle:
     """Tracks the composite launch-vehicle state across staging events.
@@ -72,14 +72,12 @@ class Vehicle:
         ``[STAGE_1, STAGE_2]``.
     """
 
-    def __init__(self, stages: List[StageConfig] | None = None) -> None:
-        self.stages: List[StageConfig] = list(stages or [STAGE_1, STAGE_2])
+    def __init__(self, stages: list[StageConfig] | None = None) -> None:
+        self.stages: list[StageConfig] = list(stages or [STAGE_1, STAGE_2])
         self._stage_index: int = 0
 
         # Propellant remaining in *each* stage (allows partial burns).
-        self._propellant_remaining: List[float] = [
-            s.propellant for s in self.stages
-        ]
+        self._propellant_remaining: list[float] = [s.propellant for s in self.stages]
 
     # -- Stage selection -----------------------------------------------------
 

@@ -7,8 +7,6 @@ the aggregate mission summary written at simulation end.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 # ---------------------------------------------------------------------------
 # Health status enumeration (plain strings for JSON friendliness)

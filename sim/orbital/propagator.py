@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List
 
 import numpy as np
 
-from sim.config import EARTH_MU, EARTH_RADIUS_M, EARTH_J2
+from sim.config import EARTH_J2, EARTH_MU, EARTH_RADIUS_M
 from sim.core.state import VehicleState
 
 
@@ -89,11 +88,11 @@ class OrbitPropagator:
         n = np.linalg.norm(n_vec)
 
         # Eccentricity vector
-        e_vec = ((v ** 2 - mu / r) * r_vec - np.dot(r_vec, v_vec) * v_vec) / mu
+        e_vec = ((v**2 - mu / r) * r_vec - np.dot(r_vec, v_vec) * v_vec) / mu
         e = np.linalg.norm(e_vec)
 
         # Specific mechanical energy -> semi-major axis
-        energy = 0.5 * v ** 2 - mu / r
+        energy = 0.5 * v**2 - mu / r
         if abs(energy) < 1e-12:
             # Parabolic edge case — treat as very large a
             a = 1e15
@@ -134,7 +133,7 @@ class OrbitPropagator:
                 nu = 0.0
 
         # Derived quantities
-        period = 2.0 * math.pi * math.sqrt(abs(a ** 3) / mu) if a > 0 else math.inf
+        period = 2.0 * math.pi * math.sqrt(abs(a**3) / mu) if a > 0 else math.inf
         r_apoapsis = a * (1.0 + e)
         r_periapsis = a * (1.0 - e)
         apoapsis_alt_km = (r_apoapsis - EARTH_RADIUS_M) / 1000.0
@@ -157,7 +156,7 @@ class OrbitPropagator:
     # J2 perturbed propagation
     # ------------------------------------------------------------------
 
-    def propagate(self, duration_s: float, dt_s: float = 10.0) -> List[VehicleState]:
+    def propagate(self, duration_s: float, dt_s: float = 10.0) -> list[VehicleState]:
         """Propagate the orbit forward using J2-perturbed Cowell's method.
 
         Integrates the equations of motion in Cartesian coordinates with a
@@ -181,7 +180,7 @@ class OrbitPropagator:
         mass = self._insertion_state.mass_kg
         t0 = self._insertion_state.time_s
 
-        states: List[VehicleState] = []
+        states: list[VehicleState] = []
         t = 0.0
 
         while t <= duration_s + 1e-9:
@@ -247,14 +246,16 @@ class OrbitPropagator:
         a_two_body = -mu / (r2 * r) * r_vec
 
         # J2 perturbation
-        coeff = -1.5 * J2 * mu * Re ** 2 / r5
+        coeff = -1.5 * J2 * mu * Re**2 / r5
         z2_over_r2 = (z / r) ** 2
 
-        a_j2 = coeff * np.array([
-            x * (1.0 - 5.0 * z2_over_r2),
-            y * (1.0 - 5.0 * z2_over_r2),
-            z * (3.0 - 5.0 * z2_over_r2),
-        ])
+        a_j2 = coeff * np.array(
+            [
+                x * (1.0 - 5.0 * z2_over_r2),
+                y * (1.0 - 5.0 * z2_over_r2),
+                z * (3.0 - 5.0 * z2_over_r2),
+            ]
+        )
 
         return a_two_body + a_j2
 

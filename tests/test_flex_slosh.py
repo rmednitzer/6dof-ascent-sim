@@ -8,14 +8,14 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from sim import config
 from sim.dynamics.flex_body import FlexBody
 from sim.dynamics.slosh import SloshModel
-from sim import config
-
 
 # ---------------------------------------------------------------------------
 # FlexBody tests
 # ---------------------------------------------------------------------------
+
 
 class TestFlexBodyInit:
     """FlexBody initialization and configuration."""
@@ -116,14 +116,13 @@ class TestFlexBodyUpdate:
         disp_full = fb_full.modal_displacements()
         disp_empty = fb_empty.modal_displacements()
 
-        assert not np.allclose(disp_full, disp_empty), (
-            "Full and empty propellant should give different flex responses"
-        )
+        assert not np.allclose(disp_full, disp_empty), "Full and empty propellant should give different flex responses"
 
 
 # ---------------------------------------------------------------------------
 # SloshModel tests
 # ---------------------------------------------------------------------------
+
 
 class TestSloshModelInit:
     """SloshModel initialization."""
@@ -226,8 +225,7 @@ class TestSloshModelUpdate:
         """reset() should zero all pendulum states."""
         sm = SloshModel()
         for _ in range(20):
-            sm.update(dt=0.01, lateral_accel_mps2=5.0,
-                      propellant_mass_kg=100000.0, propellant_fraction=0.5)
+            sm.update(dt=0.01, lateral_accel_mps2=5.0, propellant_mass_kg=100000.0, propellant_fraction=0.5)
 
         sm.reset()
         npt.assert_array_equal(sm.pendulum_angles(), np.zeros(1))
@@ -241,16 +239,14 @@ class TestSloshModelUpdate:
 
         # Excite
         for _ in range(200):
-            sm.update(dt=0.01, lateral_accel_mps2=5.0,
-                      propellant_mass_kg=prop_mass, propellant_fraction=prop_frac)
+            sm.update(dt=0.01, lateral_accel_mps2=5.0, propellant_mass_kg=prop_mass, propellant_fraction=prop_frac)
 
         e_excited = sm.kinetic_energy(prop_mass) + sm.potential_energy(prop_mass, prop_frac)
         assert e_excited > 0
 
         # Ring down
         for _ in range(2000):
-            sm.update(dt=0.01, lateral_accel_mps2=0.0,
-                      propellant_mass_kg=prop_mass, propellant_fraction=prop_frac)
+            sm.update(dt=0.01, lateral_accel_mps2=0.0, propellant_mass_kg=prop_mass, propellant_fraction=prop_frac)
 
         e_decayed = sm.kinetic_energy(prop_mass) + sm.potential_energy(prop_mass, prop_frac)
         assert e_decayed < e_excited

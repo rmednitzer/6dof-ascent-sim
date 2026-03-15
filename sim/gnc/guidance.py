@@ -20,16 +20,15 @@ from enum import IntEnum
 import numpy as np
 
 from sim import config
-from sim.core.state import VehicleState
 from sim.core.reference_frames import (
     quaternion_from_axis_angle,
-    quaternion_multiply,
-    quaternion_conjugate,
 )
+from sim.core.state import VehicleState
 
 
 class GuidancePhase(IntEnum):
     """Guidance phase enumeration."""
+
     VERTICAL_RISE = 1
     GRAVITY_TURN = 2
     TERMINAL = 3
@@ -137,8 +136,7 @@ class GuidanceLaw:
             # Quadratic ramp: starts slow, accelerates
             target_pitch_at_meco_deg = 80.0
             programmed_pitch_deg = (
-                config.PITCH_KICK_DEG
-                + (target_pitch_at_meco_deg - config.PITCH_KICK_DEG) * fraction**1.5
+                config.PITCH_KICK_DEG + (target_pitch_at_meco_deg - config.PITCH_KICK_DEG) * fraction**1.5
             )
             programmed_pitch_rad = math.radians(min(programmed_pitch_deg, 89.0))
 
@@ -158,10 +156,7 @@ class GuidanceLaw:
                 # Later: follow programmed schedule (velocity will catch up)
                 pitch_from_vert = programmed_pitch_rad
 
-            desired_dir = (
-                up * math.cos(pitch_from_vert)
-                + downrange * math.sin(pitch_from_vert)
-            )
+            desired_dir = up * math.cos(pitch_from_vert) + downrange * math.sin(pitch_from_vert)
             desired_dir /= np.linalg.norm(desired_dir)
 
         q_des = self._quaternion_aligning_thrust(desired_dir)
@@ -172,7 +167,7 @@ class GuidanceLaw:
         pos = state.position_eci
         vel = state.velocity_eci
         r = np.linalg.norm(pos)
-        v = np.linalg.norm(vel)
+        _v = np.linalg.norm(vel)  # noqa: F841 (reserved for future use)
 
         if r < 1.0:
             return GuidanceCommand(state.quaternion.copy(), 1.0, GuidancePhase.TERMINAL)
@@ -242,9 +237,7 @@ class GuidanceLaw:
         sin_lon = math.sin(lon_rad)
         cos_lon = math.cos(lon_rad)
 
-        north_ecef = np.array([
-            -sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat
-        ])
+        north_ecef = np.array([-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat])
         east_ecef = np.array([-sin_lon, cos_lon, 0.0])
 
         # Downrange in ECEF

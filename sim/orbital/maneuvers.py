@@ -7,7 +7,6 @@ Hohmann transfers, circularisation burns, and plane changes.
 from __future__ import annotations
 
 import math
-from typing import Tuple
 
 import numpy as np
 
@@ -16,7 +15,7 @@ from sim.core.state import VehicleState
 from sim.orbital.propagator import OrbitalElements
 
 
-def hohmann_transfer(r1: float, r2: float) -> Tuple[float, float, float]:
+def hohmann_transfer(r1: float, r2: float) -> tuple[float, float, float]:
     """Compute the delta-v budget for a coplanar Hohmann transfer.
 
     Parameters
@@ -50,7 +49,7 @@ def hohmann_transfer(r1: float, r2: float) -> Tuple[float, float, float]:
     dv2 = abs(v_circ_2 - v_transfer_2)
 
     # Transfer time is half the period of the transfer ellipse
-    transfer_time = math.pi * math.sqrt(a_transfer ** 3 / mu)
+    transfer_time = math.pi * math.sqrt(a_transfer**3 / mu)
 
     return dv1, dv2, transfer_time
 
@@ -82,11 +81,11 @@ def circularization_dv(state: VehicleState) -> float:
     # Radial component of velocity
     r_hat = state.position_eci / r
     v_radial = np.dot(state.velocity_eci, r_hat)
-    v_tangential = math.sqrt(max(v ** 2 - v_radial ** 2, 0.0))
+    v_tangential = math.sqrt(max(v**2 - v_radial**2, 0.0))
 
     # Delta-v is the vector difference to achieve purely tangential circular velocity.
     # dv^2 = v_radial^2 + (v_circular - v_tangential)^2
-    dv = math.sqrt(v_radial ** 2 + (v_circular - v_tangential) ** 2)
+    dv = math.sqrt(v_radial**2 + (v_circular - v_tangential) ** 2)
     return dv
 
 

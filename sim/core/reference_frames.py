@@ -21,11 +21,13 @@ def eci_to_ecef(pos_eci: np.ndarray, time_s: float) -> np.ndarray:
     """
     theta = config.EARTH_OMEGA * time_s
     c, s = math.cos(theta), math.sin(theta)
-    R = np.array([
-        [c, s, 0.0],
-        [-s, c, 0.0],
-        [0.0, 0.0, 1.0],
-    ])
+    R = np.array(
+        [
+            [c, s, 0.0],
+            [-s, c, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
     return R @ pos_eci
 
 
@@ -41,11 +43,13 @@ def ecef_to_eci(pos_ecef: np.ndarray, time_s: float) -> np.ndarray:
     """
     theta = config.EARTH_OMEGA * time_s
     c, s = math.cos(theta), math.sin(theta)
-    R = np.array([
-        [c, -s, 0.0],
-        [s, c, 0.0],
-        [0.0, 0.0, 1.0],
-    ])
+    R = np.array(
+        [
+            [c, -s, 0.0],
+            [s, c, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
     return R @ pos_ecef
 
 
@@ -131,11 +135,13 @@ def eci_to_ned(pos_eci: np.ndarray, vel_eci: np.ndarray, lat_rad: float, lon_rad
     sin_lon = math.sin(lon_rad)
     cos_lon = math.cos(lon_rad)
 
-    R_ecef_ned = np.array([
-        [-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat],
-        [-sin_lon, cos_lon, 0.0],
-        [-cos_lat * cos_lon, -cos_lat * sin_lon, -sin_lat],
-    ])
+    R_ecef_ned = np.array(
+        [
+            [-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat],
+            [-sin_lon, cos_lon, 0.0],
+            [-cos_lat * cos_lon, -cos_lat * sin_lon, -sin_lat],
+        ]
+    )
     return R_ecef_ned @ vel_eci
 
 
@@ -149,11 +155,13 @@ def quat_to_dcm(q: np.ndarray) -> np.ndarray:
         3x3 DCM rotating ECI vectors to body frame.
     """
     x, y, z, w = q
-    return np.array([
-        [1 - 2*(y*y + z*z), 2*(x*y + w*z), 2*(x*z - w*y)],
-        [2*(x*y - w*z), 1 - 2*(x*x + z*z), 2*(y*z + w*x)],
-        [2*(x*z + w*y), 2*(y*z - w*x), 1 - 2*(x*x + y*y)],
-    ])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)],
+            [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)],
+            [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def body_to_eci(vec_body: np.ndarray, quaternion: np.ndarray) -> np.ndarray:
@@ -196,12 +204,14 @@ def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     """
     x1, y1, z1, w1 = q1
     x2, y2, z2, w2 = q2
-    return np.array([
-        w1*x2 + x1*w2 + y1*z2 - z1*y2,
-        w1*y2 - x1*z2 + y1*w2 + z1*x2,
-        w1*z2 + x1*y2 - y1*x2 + z1*w2,
-        w1*w2 - x1*x2 - y1*y2 - z1*z2,
-    ])
+    return np.array(
+        [
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        ]
+    )
 
 
 def quaternion_conjugate(q: np.ndarray) -> np.ndarray:
@@ -234,7 +244,7 @@ def quaternion_from_axis_angle(axis: np.ndarray, angle_rad: float) -> np.ndarray
     """
     half = angle_rad * 0.5
     s = math.sin(half)
-    return np.array([axis[0]*s, axis[1]*s, axis[2]*s, math.cos(half)])
+    return np.array([axis[0] * s, axis[1] * s, axis[2] * s, math.cos(half)])
 
 
 def quaternion_derivative(q: np.ndarray, omega_body: np.ndarray) -> np.ndarray:

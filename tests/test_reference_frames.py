@@ -7,28 +7,27 @@ import math
 
 import numpy as np
 import numpy.testing as npt
-import pytest
 
+from sim import config
 from sim.core.reference_frames import (
-    eci_to_ecef,
+    body_to_eci,
     ecef_to_eci,
     ecef_to_lla,
+    eci_to_body,
+    eci_to_ecef,
     lla_to_ecef,
     quat_to_dcm,
-    body_to_eci,
-    eci_to_body,
-    quaternion_multiply,
     quaternion_conjugate,
+    quaternion_derivative,
     quaternion_error,
     quaternion_from_axis_angle,
-    quaternion_derivative,
+    quaternion_multiply,
 )
-from sim import config
-
 
 # ---------------------------------------------------------------------------
 # ECI <-> ECEF round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestEciEcef:
     """ECI <-> ECEF rotation tests."""
@@ -65,6 +64,7 @@ class TestEciEcef:
 # ---------------------------------------------------------------------------
 # ECEF <-> LLA round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestEcefLla:
     """ECEF <-> LLA geodetic conversion tests."""
@@ -122,6 +122,7 @@ class TestEcefLla:
 # ---------------------------------------------------------------------------
 # Quaternion operations
 # ---------------------------------------------------------------------------
+
 
 class TestQuaternionOps:
     """Quaternion algebra: multiply, conjugate, identity, axis-angle."""
@@ -200,6 +201,7 @@ class TestQuaternionOps:
 # body_to_eci / eci_to_body inverse relationship
 # ---------------------------------------------------------------------------
 
+
 class TestBodyEciConversion:
     """Verify that body_to_eci and eci_to_body are inverses."""
 
@@ -216,9 +218,7 @@ class TestBodyEciConversion:
 
     def test_round_trip_arbitrary_quaternion(self):
         """body_to_eci(eci_to_body(v, q), q) == v for arbitrary q."""
-        q = quaternion_from_axis_angle(
-            np.array([1, 1, 1]) / math.sqrt(3), math.radians(45)
-        )
+        q = quaternion_from_axis_angle(np.array([1, 1, 1]) / math.sqrt(3), math.radians(45))
         vec_eci = np.array([10.0, -5.0, 3.0])
 
         vec_body = eci_to_body(vec_eci, q)

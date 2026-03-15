@@ -14,8 +14,7 @@ angular-rate contribution that corrupts the gyro measurement.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -26,8 +25,8 @@ from sim import config
 class _ModalState:
     """Internal state for a single bending mode."""
 
-    q: float = 0.0      # Generalised displacement (rad)
-    q_dot: float = 0.0   # Generalised velocity (rad/s)
+    q: float = 0.0  # Generalised displacement (rad)
+    q_dot: float = 0.0  # Generalised velocity (rad/s)
 
 
 class FlexBody:
@@ -51,24 +50,14 @@ class FlexBody:
         self._n: int = min(n_modes, max_modes) if n_modes is not None else max_modes
 
         # Config arrays (converted to numpy for vectorised math).
-        self._freq_full_hz: np.ndarray = np.array(
-            config.FLEX_MODE_FREQS_HZ[: self._n], dtype=float
-        )
-        self._freq_empty_hz: np.ndarray = np.array(
-            config.FLEX_MODE_FREQS_EMPTY_HZ[: self._n], dtype=float
-        )
-        self._zeta: np.ndarray = np.array(
-            config.FLEX_DAMPING_RATIOS[: self._n], dtype=float
-        )
-        self._slope_imu: np.ndarray = np.array(
-            config.FLEX_MODE_SLOPES_AT_IMU[: self._n], dtype=float
-        )
-        self._slope_engine: np.ndarray = np.array(
-            config.FLEX_MODE_SLOPES_AT_ENGINE[: self._n], dtype=float
-        )
+        self._freq_full_hz: np.ndarray = np.array(config.FLEX_MODE_FREQS_HZ[: self._n], dtype=float)
+        self._freq_empty_hz: np.ndarray = np.array(config.FLEX_MODE_FREQS_EMPTY_HZ[: self._n], dtype=float)
+        self._zeta: np.ndarray = np.array(config.FLEX_DAMPING_RATIOS[: self._n], dtype=float)
+        self._slope_imu: np.ndarray = np.array(config.FLEX_MODE_SLOPES_AT_IMU[: self._n], dtype=float)
+        self._slope_engine: np.ndarray = np.array(config.FLEX_MODE_SLOPES_AT_ENGINE[: self._n], dtype=float)
 
         # Per-mode state.
-        self.modes: List[_ModalState] = [_ModalState() for _ in range(self._n)]
+        self.modes: list[_ModalState] = [_ModalState() for _ in range(self._n)]
 
     # ------------------------------------------------------------------
     # Helpers
@@ -176,15 +165,9 @@ class FlexBody:
 
     def kinetic_energy(self, modal_mass_kg: float = 1.0) -> float:
         """Total modal kinetic energy across all modes (J)."""
-        return 0.5 * modal_mass_kg * float(
-            np.sum(self.modal_velocities() ** 2)
-        )
+        return 0.5 * modal_mass_kg * float(np.sum(self.modal_velocities() ** 2))
 
-    def potential_energy(
-        self, propellant_fraction: float, modal_mass_kg: float = 1.0
-    ) -> float:
+    def potential_energy(self, propellant_fraction: float, modal_mass_kg: float = 1.0) -> float:
         """Total modal potential energy across all modes (J)."""
         omega = self._omega(propellant_fraction)
-        return 0.5 * modal_mass_kg * float(
-            np.sum((omega ** 2) * (self.modal_displacements() ** 2))
-        )
+        return 0.5 * modal_mass_kg * float(np.sum((omega**2) * (self.modal_displacements() ** 2)))

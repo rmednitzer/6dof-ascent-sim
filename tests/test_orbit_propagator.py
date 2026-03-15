@@ -8,11 +8,10 @@ import math
 
 import numpy as np
 import numpy.testing as npt
-import pytest
 
-from sim.core.state import VehicleState
-from sim.orbital.propagator import OrbitPropagator, OrbitalElements
 from sim.config import EARTH_MU, EARTH_RADIUS_M
+from sim.core.state import VehicleState
+from sim.orbital.propagator import OrbitPropagator
 
 
 def _circular_orbit_state(altitude_km: float, inclination_deg: float) -> VehicleState:
@@ -76,7 +75,7 @@ class TestCircularOrbitElements:
         """Period should match Kepler's third law: T = 2*pi*sqrt(a^3/mu)."""
         alt_km = 400.0
         a = EARTH_RADIUS_M + alt_km * 1000.0
-        expected_period = 2.0 * math.pi * math.sqrt(a ** 3 / EARTH_MU)
+        expected_period = 2.0 * math.pi * math.sqrt(a**3 / EARTH_MU)
 
         state = _circular_orbit_state(alt_km, inclination_deg=51.6)
         prop = OrbitPropagator(state)
@@ -138,7 +137,7 @@ class TestOrbitPropagation:
         def specific_energy(s: VehicleState) -> float:
             r = np.linalg.norm(s.position_eci)
             v = np.linalg.norm(s.velocity_eci)
-            return 0.5 * v ** 2 - EARTH_MU / r
+            return 0.5 * v**2 - EARTH_MU / r
 
         e_start = specific_energy(states[0])
         e_end = specific_energy(states[-1])
