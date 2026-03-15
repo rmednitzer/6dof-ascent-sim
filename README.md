@@ -1,1 +1,109 @@
-# 6dof-ascent-sim
+# 6-DOF Launch Vehicle Ascent Simulation
+
+A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch vehicle from ignition through LEO insertion.
+
+## Features
+
+- **6-DOF rigid body dynamics** with quaternion attitude representation (scalar-last `[x,y,z,w]`)
+- **RK4 integration** at 100 Hz fixed timestep
+- **WGS84 gravity model** with J2 oblateness perturbation
+- **US Standard Atmosphere 1976** with altitude-dependent wind and gusts
+- **Two-stage propulsion** with pressure-dependent thrust/Isp interpolation
+- **Stage separation state machine** with safety interlocks
+- **Three-phase guidance**: vertical rise, programmed gravity turn, PEG terminal guidance
+- **PID attitude controller** producing TVC gimbal commands
+- **12-state Extended Kalman Filter** (position, velocity, accel bias, gyro bias)
+- **Boundary enforcement** on all actuator commands and structural loads
+- **Flight Termination System** with autonomous abort criteria
+- **Structural dynamics**: flex body bending modes + propellant slosh (pendulum analogy)
+- **Monte Carlo** dispersion analysis with multiprocessing
+- **Telemetry recording** with SHA-256 integrity hashing
+- **Post-flight analysis** with trajectory plots and orbit characterization
+
+## Quick Start
+
+```bash
+pip install -e .
+python -m sim.main
+```
+
+## CLI Options
+
+```bash
+python -m sim.main                 # Full simulation with flex + slosh
+python -m sim.main --no-flex       # Disable flex body model
+python -m sim.main --no-slosh      # Disable propellant slosh model
+```
+
+## Output
+
+- `output/telemetry.json` — Complete telemetry timeline
+- `output/summary.json` — Mission summary with key metrics
+- `output/plots/` — Trajectory visualization plots
+
+## Configuration
+
+All simulation parameters are in `sim/config.py` — single source of truth for orbital targets, vehicle specs, environment models, GNC gains, safety limits, and Monte Carlo settings.
+
+## Tests
+
+```bash
+pytest tests/ -v
+```
+
+## Project Structure
+
+```
+sim/
+├── config.py              # All simulation parameters
+├── main.py                # Main simulation loop
+├── core/
+│   ├── state.py           # VehicleState dataclass
+│   ├── integrator.py      # RK4 integrator
+│   └── reference_frames.py # ECI/ECEF/NED/Body transforms
+├── environment/
+│   ├── gravity.py         # WGS84 + J2 gravity
+│   ├── atmosphere.py      # US Standard Atmosphere 1976
+│   └── wind.py            # Wind profile + gusts
+├── vehicle/
+│   ├── vehicle.py         # Stage configuration + mass tracking
+│   ├── propulsion.py      # Engine model with transients
+│   ├── aerodynamics.py    # Mach-dependent drag
+│   └── staging.py         # Separation state machine
+├── dynamics/
+│   ├── flex_body.py       # Bending mode dynamics
+│   └── slosh.py           # Propellant slosh model
+├── gnc/
+│   ├── guidance.py        # Three-phase ascent guidance
+│   ├── control.py         # PID attitude controller + TVC
+│   ├── sensors.py         # IMU/GPS/Baro sensor models
+│   └── navigation.py      # Extended Kalman Filter
+├── safety/
+│   ├── boundary_enforcer.py # Command validation + clamping
+│   ├── fts.py             # Flight Termination System
+│   └── health_monitor.py  # Subsystem health tracking
+├── telemetry/
+│   ├── schemas.py         # TelemetryFrame + MissionSummary
+│   └── recorder.py        # Telemetry recording + output
+├── orbital/
+│   ├── propagator.py      # Orbit elements + propagation
+│   ├── maneuvers.py       # Correction budget estimation
+│   └── decay.py           # Orbit decay estimation
+├── montecarlo/
+│   ├── dispersions.py     # Parameter dispersion definitions
+│   ├── dispatcher.py      # Parallel run management
+│   └── statistics.py      # Result analysis + plots
+└── analysis/
+    └── postflight.py      # Post-flight trajectory plots
+```
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — System design and data flow
+- [Assumptions](docs/assumptions.md) — Modeling assumptions and simplifications
+- [STPA Analysis](docs/stpa-analysis.md) — Safety analysis
+- [Runbook](docs/runbook.md) — Operating procedures
+
+## License
+
+See [LICENSE](LICENSE) for details.
