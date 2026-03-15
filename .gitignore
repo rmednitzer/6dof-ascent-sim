@@ -13,5 +13,4 @@ env/
 *.so
 .pytest_cache/
 .mypy_cache/
-output/*
-!output/.gitkeep
+output/
