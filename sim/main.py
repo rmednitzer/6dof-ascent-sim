@@ -5,41 +5,39 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-from pathlib import Path
 
 import numpy as np
 
 from sim import config
-from sim.core.state import VehicleState
 from sim.core.integrator import StateDot, rk4_step
 from sim.core.reference_frames import (
     body_to_eci,
-    eci_to_body,
-    eci_to_ecef,
-    ecef_to_lla,
-    lla_to_ecef,
     ecef_to_eci,
+    ecef_to_lla,
+    eci_to_ecef,
+    lla_to_ecef,
     quaternion_derivative,
     quaternion_from_axis_angle,
 )
-from sim.environment.gravity import gravitational_acceleration
-from sim.environment.atmosphere import atmosphere
-from sim.environment.wind import wind_velocity_eci
-from sim.vehicle.vehicle import Vehicle
-from sim.vehicle.aerodynamics import AerodynamicsModel
-from sim.vehicle.propulsion import EngineModel, thrust_at_pressure, isp_at_pressure, mass_flow_rate as propulsion_mdot
-from sim.vehicle.staging import StagingSequencer
+from sim.core.state import VehicleState
 from sim.dynamics.flex_body import FlexBody
 from sim.dynamics.slosh import SloshModel
-from sim.gnc.guidance import GuidanceLaw, GuidanceCommand
-from sim.gnc.sensors import SensorSuite
+from sim.environment.atmosphere import atmosphere
+from sim.environment.gravity import gravitational_acceleration
+from sim.environment.wind import wind_velocity_eci
+from sim.gnc.control import AttitudeController
+from sim.gnc.guidance import GuidanceLaw
 from sim.gnc.navigation import NavigationEKF
-from sim.gnc.control import AttitudeController, TVCCommand
+from sim.gnc.sensors import SensorSuite
 from sim.safety.boundary_enforcer import BoundaryEnforcer
 from sim.safety.fts import FlightTerminationSystem
 from sim.safety.health_monitor import HealthMonitor
 from sim.telemetry.recorder import TelemetryRecorder
 from sim.telemetry.schemas import MissionSummary
+from sim.vehicle.aerodynamics import AerodynamicsModel
+from sim.vehicle.propulsion import EngineModel, thrust_at_pressure
+from sim.vehicle.staging import StagingSequencer
+from sim.vehicle.vehicle import Vehicle
 
 
 def _init_state() -> VehicleState:
@@ -68,10 +66,7 @@ def _init_state() -> VehicleState:
         angle = math.acos(np.clip(dot, -1.0, 1.0))
         quat = quaternion_from_axis_angle(axis, angle)
 
-    total_mass = (
-        config.S1_DRY_MASS_KG + config.S1_PROPELLANT_KG
-        + config.S2_DRY_MASS_KG + config.S2_PROPELLANT_KG
-    )
+    total_mass = config.S1_DRY_MASS_KG + config.S1_PROPELLANT_KG + config.S2_DRY_MASS_KG + config.S2_PROPELLANT_KG
 
     return VehicleState(
         position_eci=pos_eci,
@@ -86,11 +81,21 @@ def _init_state() -> VehicleState:
 def _save_config() -> dict:
     """Save config values that might be overridden."""
     keys = [
-        "S1_THRUST_VAC_N", "S1_ISP_VAC_S", "S2_THRUST_VAC_N", "S2_ISP_VAC_S",
-        "S1_PROPELLANT_KG", "CD_SCALE_FACTOR", "ATMO_DENSITY_SCALE",
-        "WIND_SPEED_MS", "WIND_DIRECTION_DEG", "IMU_ACCEL_BIAS_MPS2",
-        "IMU_GYRO_BIAS_RADS", "GPS_POS_NOISE_M", "S1_DRY_MASS_KG",
-        "FLEX_ENABLED", "SLOSH_ENABLED",
+        "S1_THRUST_VAC_N",
+        "S1_ISP_VAC_S",
+        "S2_THRUST_VAC_N",
+        "S2_ISP_VAC_S",
+        "S1_PROPELLANT_KG",
+        "CD_SCALE_FACTOR",
+        "ATMO_DENSITY_SCALE",
+        "WIND_SPEED_MS",
+        "WIND_DIRECTION_DEG",
+        "IMU_ACCEL_BIAS_MPS2",
+        "IMU_GYRO_BIAS_RADS",
+        "GPS_POS_NOISE_M",
+        "S1_DRY_MASS_KG",
+        "FLEX_ENABLED",
+        "SLOSH_ENABLED",
     ]
     return {k: getattr(config, k) for k in keys if hasattr(config, k)}
 
@@ -127,7 +132,6 @@ def run_simulation(
     Returns:
         MonteCarloResult with trajectory metrics.
     """
-    from sim.montecarlo.dispatcher import MonteCarloResult
 
     saved_config = _save_config()
     dispersed_params = _apply_overrides(config_override)
@@ -184,18 +188,17 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
 
     # North and East unit vectors in ECEF at launch site
     sin_lat = math.sin(lat_rad)
-    north_ecef = np.array([
-        -sin_lat * math.cos(lon_rad),
-        -sin_lat * math.sin(lon_rad),
-        cos_lat,
-    ])
+    north_ecef = np.array(
+        [
+            -sin_lat * math.cos(lon_rad),
+            -sin_lat * math.sin(lon_rad),
+            cos_lat,
+        ]
+    )
     east_ecef = np.array([-math.sin(lon_rad), math.cos(lon_rad), 0.0])
 
     # Downrange direction in ECEF (along launch azimuth)
-    downrange_ecef = (
-        north_ecef * math.cos(launch_azimuth_rad)
-        + east_ecef * math.sin(launch_azimuth_rad)
-    )
+    downrange_ecef = north_ecef * math.cos(launch_azimuth_rad) + east_ecef * math.sin(launch_azimuth_rad)
     # Up direction in ECEF
     up_ecef = pos_ecef_init / np.linalg.norm(pos_ecef_init)
 
@@ -212,7 +215,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
     peak_axial_g = 0.0
     peak_ekf_uncertainty = 0.0
     last_print_time = -10.0
-    sensor_degradation_count = 0
+    _sensor_degradation_count = 0  # noqa: F841
 
     dt = config.DT
     num_steps = int(config.T_MAX / dt)
@@ -229,7 +232,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         atmo = atmosphere(alt_m)
         rho = atmo.density_kg_m3
         pressure = atmo.pressure_pa
-        temperature = atmo.temperature_k
+        _temperature = atmo.temperature_k  # noqa: F841
         speed_of_sound = atmo.speed_of_sound_ms
         grav_eci = gravitational_acceleration(true_state.position_eci)
         wind_eci = wind_velocity_eci(true_state.position_eci, t, rng=rng)
@@ -298,13 +301,12 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         # --- Compute accelerations for structural check ---
         axial_g = thrust_n / max(true_state.mass_kg, 1.0) / config.G0
         tvc_lateral_force = thrust_n * (
-            abs(math.sin(math.radians(approved_tvc_pitch)))
-            + abs(math.sin(math.radians(approved_tvc_yaw)))
+            abs(math.sin(math.radians(approved_tvc_pitch))) + abs(math.sin(math.radians(approved_tvc_yaw)))
         )
         lateral_g = tvc_lateral_force / max(true_state.mass_kg, 1.0) / config.G0
         peak_axial_g = max(peak_axial_g, axial_g)
 
-        structural_result = enforcer.check_structural_limits(axial_g, lateral_g, q_pa)
+        enforcer.check_structural_limits(axial_g, lateral_g, q_pa)
 
         # --- Sensor measurements ---
         imu_meas, gps_meas, baro_meas = sensors.update(true_state, grav_eci, dt)
@@ -359,7 +361,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             controller.reset()
 
         # --- Health monitoring ---
-        health = health_monitor.update(
+        health_monitor.update(
             ekf_pos_covariance=ekf.covariance[0:3, 0:3],
             dynamic_pressure_pa=q_pa,
             propellant_remaining_kg=vehicle.propellant_remaining(),
@@ -379,7 +381,8 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             # Lateral acceleration at tank
             lat_accel = tvc_lateral_force / max(true_state.mass_kg, 1.0)
             forces, torques = slosh_model.update(
-                dt, lat_accel,
+                dt,
+                lat_accel,
                 vehicle.propellant_remaining(),
                 vehicle.propellant_fraction(),
             )
@@ -393,11 +396,13 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         #             TVC yaw deflects thrust in body Y (creates torque about Z)
         pitch_rad = math.radians(approved_tvc_pitch)
         yaw_rad = math.radians(approved_tvc_yaw)
-        thrust_body = np.array([
-            thrust_n * math.cos(pitch_rad) * math.cos(yaw_rad),
-            thrust_n * math.sin(yaw_rad),
-            thrust_n * math.sin(pitch_rad),
-        ])
+        thrust_body = np.array(
+            [
+                thrust_n * math.cos(pitch_rad) * math.cos(yaw_rad),
+                thrust_n * math.sin(yaw_rad),
+                thrust_n * math.sin(pitch_rad),
+            ]
+        )
         thrust_eci = body_to_eci(thrust_body, true_state.quaternion)
         slosh_force_eci = body_to_eci(slosh_force_body, true_state.quaternion)
 
@@ -408,11 +413,13 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         #   yaw:   F_y = T*sin(yaw_rad)   -> torque_z = (-arm)*F_y = -arm*T*sin(yaw_rad)
         # Sign convention: positive TVC pitch -> positive torque_y -> correct pitch-up
         moment_arm = config.VEHICLE_LENGTH_M * 0.45
-        tvc_torque = np.array([
-            0.0,
-            moment_arm * thrust_n * math.sin(pitch_rad),
-            -moment_arm * thrust_n * math.sin(yaw_rad),
-        ])
+        tvc_torque = np.array(
+            [
+                0.0,
+                moment_arm * thrust_n * math.sin(pitch_rad),
+                -moment_arm * thrust_n * math.sin(yaw_rad),
+            ]
+        )
         total_torque = tvc_torque + slosh_torque_body
 
         # Moment of inertia (cylindrical approximation)
@@ -433,7 +440,10 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         _mass_rate = actual_mdot
         _mass = true_state.mass_kg
 
-        def derivatives_fn(t_eval: float, s: VehicleState) -> StateDot:
+        def derivatives_fn(  # noqa: B023
+            t_eval: float,
+            s: VehicleState,
+        ) -> StateDot:
             total_force = _thrust_eci + _drag_eci + _slosh_eci
             accel = _grav_eci + total_force / max(s.mass_kg, 1.0)
             angular_accel = _torque / _inertia
@@ -476,10 +486,10 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         if not quiet and t - last_print_time >= 10.0:
             last_print_time = t
             print(
-                f"  t={t:6.1f}s | alt={true_state.altitude_m()/1000:7.1f} km | "
+                f"  t={t:6.1f}s | alt={true_state.altitude_m() / 1000:7.1f} km | "
                 f"v={true_state.velocity_mag_ms():7.1f} m/s | "
                 f"m={true_state.mass_kg:8.0f} kg | "
-                f"q={q_pa/1000:5.1f} kPa | stg={vehicle.stage_index+1}"
+                f"q={q_pa / 1000:5.1f} kPa | stg={vehicle.stage_index + 1}"
             )
 
         # --- Insertion check ---
@@ -518,13 +528,15 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
     orbit_elements_dict = None
     if outcome == "SUCCESS" and not is_mc:
         try:
-            from sim.orbital.propagator import OrbitPropagator
             from sim.orbital.maneuvers import total_correction_budget
+            from sim.orbital.propagator import OrbitPropagator
 
             propagator = OrbitPropagator(true_state)
             elements = propagator.state_to_elements()
             corr_dv = total_correction_budget(
-                elements, config.TARGET_ALTITUDE_M, config.TARGET_INCLINATION_DEG,
+                elements,
+                config.TARGET_ALTITUDE_M,
+                config.TARGET_INCLINATION_DEG,
             )
             orbit_elements_dict = {
                 "semi_major_axis_km": elements.semi_major_axis_m / 1000,
@@ -552,12 +564,12 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             # Generate plots
             try:
                 from sim.analysis.postflight import generate_plots
+
                 generate_plots(recorder.internal_frames, summary)
             except Exception as e:
                 print(f"  Plot generation error: {e}")
 
     # Return MonteCarloResult
-    from sim.montecarlo.dispatcher import MonteCarloResult
 
     return MonteCarloResult(
         run_index=run_index,
@@ -582,12 +594,15 @@ def _print_summary(summary: MissionSummary, orbit: dict | None) -> None:
     print("Mission Summary")
     print("=" * 40)
     print(f"Outcome: {summary.outcome}")
-    print(f"Final altitude: {summary.final_altitude_m/1000:.1f} km")
+    print(f"Final altitude: {summary.final_altitude_m / 1000:.1f} km")
     print(f"Final velocity: {summary.final_velocity_ms:.1f} m/s")
-    print(f"Peak dynamic pressure: {summary.peak_dynamic_pressure_pa:.0f} Pa "
-          f"({summary.peak_dynamic_pressure_pa/config.MAX_Q_PA*100:.1f}% of limit)")
-    print(f"Peak axial G: {summary.peak_axial_g:.2f} g "
-          f"({summary.peak_axial_g/config.MAX_AXIAL_G*100:.1f}% of limit)")
+    print(
+        f"Peak dynamic pressure: {summary.peak_dynamic_pressure_pa:.0f} Pa "
+        f"({summary.peak_dynamic_pressure_pa / config.MAX_Q_PA * 100:.1f}% of limit)"
+    )
+    print(
+        f"Peak axial G: {summary.peak_axial_g:.2f} g ({summary.peak_axial_g / config.MAX_AXIAL_G * 100:.1f}% of limit)"
+    )
     print(f"Boundary violations: {summary.total_boundary_violations}")
     print(f"FTS triggered: {summary.fts_triggered}")
     print(f"Total sim time: {summary.final_time_s:.1f} s")
@@ -619,7 +634,7 @@ def main() -> None:
 
     print("6-DOF Ascent Simulation")
     print("=" * 40)
-    print(f"Target: {config.TARGET_ALTITUDE_M/1000:.0f} km, {config.TARGET_INCLINATION_DEG} deg inc")
+    print(f"Target: {config.TARGET_ALTITUDE_M / 1000:.0f} km, {config.TARGET_INCLINATION_DEG} deg inc")
     print(f"Flex body: {'ON' if config.FLEX_ENABLED else 'OFF'}")
     print(f"Slosh: {'ON' if config.SLOSH_ENABLED else 'OFF'}")
     print()

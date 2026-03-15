@@ -16,7 +16,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from sim.config import INTERNAL_HZ, TELEMETRY_HZ
 from sim.telemetry.schemas import MissionSummary, TelemetryFrame

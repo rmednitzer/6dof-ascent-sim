@@ -107,32 +107,23 @@ class FlightTerminationSystem:
         evidence: dict[str, Any] = {"sim_time": sim_time}
 
         # 1. Cross-range deviation (only checked below 100 km altitude)
-        crossrange_m = self._compute_crossrange(
-            position_ecef, nominal_plane_normal, nominal_plane_point
-        )
+        crossrange_m = self._compute_crossrange(position_ecef, nominal_plane_normal, nominal_plane_point)
         evidence["crossrange_m"] = crossrange_m
         if altitude_m < 100_000.0 and abs(crossrange_m) > FTS_CROSSRANGE_LIMIT_M:
-            reasons.append(
-                f"Cross-range deviation {crossrange_m:.1f} m exceeds "
-                f"limit {FTS_CROSSRANGE_LIMIT_M:.1f} m"
-            )
+            reasons.append(f"Cross-range deviation {crossrange_m:.1f} m exceeds limit {FTS_CROSSRANGE_LIMIT_M:.1f} m")
 
         # 2. Attitude error
         attitude_err_deg = self._compute_attitude_error(q_actual, q_desired)
         evidence["attitude_error_deg"] = attitude_err_deg
         if attitude_err_deg > FTS_ATTITUDE_LIMIT_DEG:
-            reasons.append(
-                f"Attitude error {attitude_err_deg:.2f} deg exceeds "
-                f"limit {FTS_ATTITUDE_LIMIT_DEG:.1f} deg"
-            )
+            reasons.append(f"Attitude error {attitude_err_deg:.2f} deg exceeds limit {FTS_ATTITUDE_LIMIT_DEG:.1f} deg")
 
         # 3. EKF position uncertainty (largest 1-sigma)
         pos_uncertainty_m = self._compute_position_uncertainty(ekf_pos_covariance)
         evidence["ekf_pos_uncertainty_m"] = pos_uncertainty_m
         if pos_uncertainty_m > FTS_COVARIANCE_LIMIT_M:
             reasons.append(
-                f"EKF position uncertainty {pos_uncertainty_m:.1f} m exceeds "
-                f"limit {FTS_COVARIANCE_LIMIT_M:.1f} m"
+                f"EKF position uncertainty {pos_uncertainty_m:.1f} m exceeds limit {FTS_COVARIANCE_LIMIT_M:.1f} m"
             )
 
         # 4. Structural limits
@@ -141,9 +132,7 @@ class FlightTerminationSystem:
         )
         evidence["structural_check"] = struct_result.evidence
         if not struct_result.approved:
-            reasons.append(
-                f"Structural limit exceeded: {struct_result.violation_type}"
-            )
+            reasons.append(f"Structural limit exceeded: {struct_result.violation_type}")
 
         # --- Trigger decision ---
         if reasons:

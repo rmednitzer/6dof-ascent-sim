@@ -43,9 +43,7 @@ def gravitational_acceleration(position_eci: np.ndarray) -> np.ndarray:
     r = np.sqrt(r_sq)
 
     if r < 1.0:
-        raise ValueError(
-            f"Position magnitude {r:.3f} m is too small for gravity computation."
-        )
+        raise ValueError(f"Position magnitude {r:.3f} m is too small for gravity computation.")
 
     r_inv = 1.0 / r
     r_sq_inv = r_inv * r_inv

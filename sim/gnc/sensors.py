@@ -6,19 +6,18 @@ with realistic noise, bias, and availability constraints.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
 
 from sim import config
-from sim.core.state import VehicleState
 from sim.core.reference_frames import eci_to_body
-
+from sim.core.state import VehicleState
 
 # ---------------------------------------------------------------------------
 # Sensor measurement data classes
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class IMUMeasurement:
@@ -29,6 +28,7 @@ class IMUMeasurement:
         gyro_body_rads: Measured angular velocity in body frame (rad/s).
         time_s: Timestamp of the measurement (s).
     """
+
     accel_body_mps2: np.ndarray
     gyro_body_rads: np.ndarray
     time_s: float
@@ -43,6 +43,7 @@ class GPSMeasurement:
         velocity_eci_ms: Measured ECI velocity (m/s).
         time_s: Timestamp of the measurement (s).
     """
+
     position_eci_m: np.ndarray
     velocity_eci_ms: np.ndarray
     time_s: float
@@ -56,6 +57,7 @@ class BaroMeasurement:
         altitude_m: Measured altitude above mean sea level (m).
         time_s: Timestamp of the measurement (s).
     """
+
     altitude_m: float
     time_s: float
 
@@ -63,6 +65,7 @@ class BaroMeasurement:
 # ---------------------------------------------------------------------------
 # Sensor model classes
 # ---------------------------------------------------------------------------
+
 
 class IMU:
     """Strapdown IMU model with accelerometer and gyroscope.
@@ -148,12 +151,8 @@ class IMU:
         true_gyro_body = true_state.angular_velocity_body.copy()
 
         # Bias random walk
-        self._accel_bias += self._rng.normal(
-            0.0, config.IMU_ACCEL_BIAS_MPS2 * np.sqrt(dt), size=3
-        )
-        self._gyro_bias += self._rng.normal(
-            0.0, config.IMU_GYRO_BIAS_RADS * np.sqrt(dt), size=3
-        )
+        self._accel_bias += self._rng.normal(0.0, config.IMU_ACCEL_BIAS_MPS2 * np.sqrt(dt), size=3)
+        self._gyro_bias += self._rng.normal(0.0, config.IMU_GYRO_BIAS_RADS * np.sqrt(dt), size=3)
 
         # Add noise + bias
         accel_noise = self._rng.normal(0.0, config.IMU_ACCEL_NOISE_MPS2, size=3)
@@ -187,7 +186,7 @@ class GPS:
         self._update_period_s: float = 1.0 / config.GPS_UPDATE_HZ
         self._last_update_time_s: float = -1.0
 
-    def measure(self, true_state: VehicleState, dt: float) -> Optional[GPSMeasurement]:
+    def measure(self, true_state: VehicleState, dt: float) -> GPSMeasurement | None:
         """Return a GPS fix or *None* if not available this timestep.
 
         Args:
@@ -241,7 +240,7 @@ class Barometer:
         self._update_period_s: float = 1.0 / config.BARO_UPDATE_HZ
         self._last_update_time_s: float = -1.0
 
-    def measure(self, true_state: VehicleState, dt: float) -> Optional[BaroMeasurement]:
+    def measure(self, true_state: VehicleState, dt: float) -> BaroMeasurement | None:
         """Return a barometric altitude or *None* if unavailable.
 
         Args:
@@ -280,6 +279,7 @@ class Barometer:
 # Convenience bundle
 # ---------------------------------------------------------------------------
 
+
 class SensorSuite:
     """Collection of all on-board sensors.
 
@@ -301,7 +301,7 @@ class SensorSuite:
         true_state: VehicleState,
         gravity_eci_mps2: np.ndarray,
         dt: float,
-    ) -> tuple[IMUMeasurement, Optional[GPSMeasurement], Optional[BaroMeasurement]]:
+    ) -> tuple[IMUMeasurement, GPSMeasurement | None, BaroMeasurement | None]:
         """Poll every sensor and return measurements (None if unavailable).
 
         Args:

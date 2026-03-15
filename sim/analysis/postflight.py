@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from sim import config
-from sim.telemetry.schemas import TelemetryFrame, MissionSummary
+from sim.telemetry.schemas import MissionSummary, TelemetryFrame
 
 
 def generate_plots(
@@ -23,6 +23,7 @@ def generate_plots(
         output_dir: Directory for plot files.
     """
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -65,8 +66,7 @@ def generate_plots(
     ax.axhline(config.MAX_Q_PA / 1000, color="r", linestyle="--", label="Structural Limit")
     if q_vals:
         max_q_idx = int(np.argmax(q_vals))
-        ax.axvline(times[max_q_idx], color="orange", linestyle=":", alpha=0.7,
-                   label=f"Max-Q @ {times[max_q_idx]:.1f}s")
+        ax.axvline(times[max_q_idx], color="orange", linestyle=":", alpha=0.7, label=f"Max-Q @ {times[max_q_idx]:.1f}s")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Dynamic Pressure (kPa)")
     ax.set_title("Dynamic Pressure vs Time")

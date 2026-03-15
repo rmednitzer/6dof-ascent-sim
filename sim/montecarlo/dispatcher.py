@@ -6,7 +6,7 @@ import argparse
 import json
 import multiprocessing
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -54,21 +54,23 @@ def _run_single(args: tuple[int, int, dict]) -> dict:
         result = run_simulation(config_override=config_override, quiet=True)
         return asdict(result)
     except Exception as e:
-        return asdict(MonteCarloResult(
-            run_index=run_index,
-            seed=seed,
-            outcome=f"ERROR: {e!s}",
-            dispersed_params=config_override,
-            insertion_altitude_m=None,
-            insertion_velocity_ms=None,
-            insertion_fpa_deg=None,
-            peak_q_pa=0.0,
-            peak_axial_g=0.0,
-            peak_ekf_uncertainty_m=0.0,
-            boundary_clamp_count=0,
-            fts_trigger_time_s=None,
-            total_time_s=0.0,
-        ))
+        return asdict(
+            MonteCarloResult(
+                run_index=run_index,
+                seed=seed,
+                outcome=f"ERROR: {e!s}",
+                dispersed_params=config_override,
+                insertion_altitude_m=None,
+                insertion_velocity_ms=None,
+                insertion_fpa_deg=None,
+                peak_q_pa=0.0,
+                peak_axial_g=0.0,
+                peak_ekf_uncertainty_m=0.0,
+                boundary_clamp_count=0,
+                fts_trigger_time_s=None,
+                total_time_s=0.0,
+            )
+        )
 
 
 class MonteCarloDispatcher:
@@ -128,11 +130,7 @@ class MonteCarloDispatcher:
                 if now - last_report > 60 or pct % 0.1 < 1.0 / self.num_runs:
                     elapsed = now - start_time
                     eta = elapsed / pct - elapsed if pct > 0 else 0
-                    print(
-                        f"  [{completed}/{self.num_runs}] "
-                        f"{pct:.0%} complete, "
-                        f"elapsed {elapsed:.0f}s, ETA {eta:.0f}s"
-                    )
+                    print(f"  [{completed}/{self.num_runs}] {pct:.0%} complete, elapsed {elapsed:.0f}s, ETA {eta:.0f}s")
                     last_report = now
                 results.append(MonteCarloResult(**result_dict))
 

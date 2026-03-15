@@ -6,12 +6,11 @@ reduction, and state estimation consistency.
 
 import numpy as np
 import numpy.testing as npt
-import pytest
 
+from sim import config
 from sim.core.state import VehicleState
 from sim.gnc.navigation import NavigationEKF
-from sim.gnc.sensors import IMUMeasurement, GPSMeasurement, BaroMeasurement
-from sim import config
+from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement
 
 
 def _make_initial_state() -> VehicleState:
@@ -96,7 +95,7 @@ class TestEKFPredict:
         ekf = NavigationEKF(_make_initial_state())
         unc_before = ekf.position_uncertainty_m()
 
-        imu = IMUMeasurement(
+        _imu = IMUMeasurement(  # noqa: F841
             accel_body_mps2=np.array([0.0, 0.0, 9.81]),
             gyro_body_rads=np.zeros(3),
             time_s=0.01,
@@ -113,9 +112,7 @@ class TestEKFPredict:
             ekf.predict(imu_step, gravity_eci, dt=0.01)
 
         unc_after = ekf.position_uncertainty_m()
-        assert unc_after > unc_before, (
-            f"Uncertainty should grow: before={unc_before:.4f}, after={unc_after:.4f}"
-        )
+        assert unc_after > unc_before, f"Uncertainty should grow: before={unc_before:.4f}, after={unc_after:.4f}"
 
     def test_predict_covariance_stays_symmetric(self):
         """Covariance should remain symmetric after predict steps."""

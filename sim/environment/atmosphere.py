@@ -53,13 +53,13 @@ _G0: float = config.G0
 
 # (geopotential altitude in m, temperature lapse rate in K/m)
 _LAYER_PARAMS: list[tuple[float, float]] = [
-    (0.0, -0.0065),          # Troposphere
-    (11_000.0, 0.0),         # Tropopause
-    (20_000.0, 0.001),       # Stratosphere (lower)
-    (32_000.0, 0.0028),      # Stratosphere (upper)
-    (47_000.0, 0.0),         # Stratopause
-    (51_000.0, -0.0028),     # Mesosphere (lower)
-    (71_000.0, -0.002),      # Mesosphere (upper)
+    (0.0, -0.0065),  # Troposphere
+    (11_000.0, 0.0),  # Tropopause
+    (20_000.0, 0.001),  # Stratosphere (lower)
+    (32_000.0, 0.0028),  # Stratosphere (upper)
+    (47_000.0, 0.0),  # Stratopause
+    (51_000.0, -0.0028),  # Mesosphere (lower)
+    (71_000.0, -0.002),  # Mesosphere (upper)
 ]
 
 #: Altitude ceiling of the tabulated model (m).
@@ -208,9 +208,7 @@ def _evaluate_standard_layers(altitude_m: float) -> tuple[float, float]:
 
     if abs(layer.lapse) > 1e-12:
         T = layer.T_base + layer.lapse * dh
-        P = layer.P_base * (T / layer.T_base) ** (
-            -_G0 / (_R_SPECIFIC * layer.lapse)
-        )
+        P = layer.P_base * (T / layer.T_base) ** (-_G0 / (_R_SPECIFIC * layer.lapse))
     else:
         T = layer.T_base
         P = layer.P_base * math.exp(-_G0 * dh / (_R_SPECIFIC * T))

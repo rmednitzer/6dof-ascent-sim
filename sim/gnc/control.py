@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from sim import config
-from sim.core.reference_frames import quaternion_multiply, quaternion_conjugate
+from sim.core.reference_frames import quaternion_conjugate, quaternion_multiply
 
 
 @dataclass
@@ -22,6 +22,7 @@ class TVCCommand:
         pitch_deg: TVC pitch deflection in body frame (deg).
         yaw_deg: TVC yaw deflection in body frame (deg).
     """
+
     pitch_deg: float
     yaw_deg: float
 
@@ -85,8 +86,8 @@ class AttitudeController:
 
         # Small-angle attitude error in body frame (rad)
         # For small errors: theta ~ 2 * [qx, qy, qz]
-        err_pitch = 2.0 * q_err[1]   # body Y axis -> pitch
-        err_yaw = 2.0 * q_err[2]     # body Z axis -> yaw
+        err_pitch = 2.0 * q_err[1]  # body Y axis -> pitch
+        err_yaw = 2.0 * q_err[2]  # body Z axis -> yaw
 
         # Angular rate (derivative term) — body Y and Z rates
         rate_pitch = omega_body[1]
@@ -96,28 +97,16 @@ class AttitudeController:
         self._integral_pitch += err_pitch * dt
         self._integral_yaw += err_yaw * dt
 
-        self._integral_pitch = np.clip(
-            self._integral_pitch, -self._int_limit_rad, self._int_limit_rad
-        )
-        self._integral_yaw = np.clip(
-            self._integral_yaw, -self._int_limit_rad, self._int_limit_rad
-        )
+        self._integral_pitch = np.clip(self._integral_pitch, -self._int_limit_rad, self._int_limit_rad)
+        self._integral_yaw = np.clip(self._integral_yaw, -self._int_limit_rad, self._int_limit_rad)
 
         # PID law (in radians)
         # Pitch: positive error -> positive TVC pitch -> positive torque_y (correct)
         # Yaw: positive error -> need positive torque_z, but due to cross-product
         #   positive TVC yaw -> negative torque_z, so negate yaw command.
         # D-term: subtract rate to damp oscillations.
-        cmd_pitch_rad = (
-            self._kp * err_pitch
-            - self._kd * rate_pitch
-            + self._ki * self._integral_pitch
-        )
-        cmd_yaw_rad = -(
-            self._kp * err_yaw
-            - self._kd * rate_yaw
-            + self._ki * self._integral_yaw
-        )
+        cmd_pitch_rad = self._kp * err_pitch - self._kd * rate_pitch + self._ki * self._integral_pitch
+        cmd_yaw_rad = -(self._kp * err_yaw - self._kd * rate_yaw + self._ki * self._integral_yaw)
 
         # Convert to degrees
         cmd_pitch_deg = np.degrees(cmd_pitch_rad)

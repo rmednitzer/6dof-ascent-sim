@@ -4,13 +4,9 @@ Validates sea-level reference values, temperature profile across layers,
 altitude dependence, and upper-atmosphere / vacuum behaviour.
 """
 
-import math
-
-import numpy as np
 import numpy.testing as npt
-import pytest
 
-from sim.environment.atmosphere import atmosphere, AtmosphereResult
+from sim.environment.atmosphere import AtmosphereResult, atmosphere
 
 
 class TestSeaLevel:
@@ -74,7 +70,7 @@ class TestAltitudeDependence:
 
         for i in range(len(pressures) - 1):
             assert pressures[i + 1] < pressures[i], (
-                f"Pressure at {altitudes[i+1]}m ({pressures[i+1]:.2f} Pa) "
+                f"Pressure at {altitudes[i + 1]}m ({pressures[i + 1]:.2f} Pa) "
                 f">= pressure at {altitudes[i]}m ({pressures[i]:.2f} Pa)"
             )
 
@@ -151,6 +147,8 @@ class TestAtmosphereResult:
             if r.temperature_k > 0 and r.pressure_pa > 0:
                 rho_expected = r.pressure_pa / (R_specific * r.temperature_k)
                 npt.assert_allclose(
-                    r.density_kg_m3, rho_expected, rtol=0.01,
+                    r.density_kg_m3,
+                    rho_expected,
+                    rtol=0.01,
                     err_msg=f"Ideal gas law mismatch at {alt} m",
                 )

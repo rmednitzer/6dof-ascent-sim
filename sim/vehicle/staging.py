@@ -11,18 +11,16 @@ A safety interlock prevents separation while effective throttle exceeds 5 %.
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import Optional
 
-from sim.vehicle.vehicle import Vehicle
 from sim.vehicle.propulsion import EngineModel
-
+from sim.vehicle.vehicle import Vehicle
 
 # ---------------------------------------------------------------------------
 # Sequence timing
 # ---------------------------------------------------------------------------
-TAIL_OFF_DURATION: float = 1.0       # Engine tail-off (s)
-COAST_DURATION: float = 1.0          # Unpowered coast (s)
-S2_IGNITION_RAMP: float = 0.5        # S2 engine start-up ramp (s)
+TAIL_OFF_DURATION: float = 1.0  # Engine tail-off (s)
+COAST_DURATION: float = 1.0  # Unpowered coast (s)
+S2_IGNITION_RAMP: float = 0.5  # S2 engine start-up ramp (s)
 
 # Safety interlock threshold — fraction of rated thrust
 THRUST_INTERLOCK_FRACTION: float = 0.05
@@ -32,14 +30,16 @@ THRUST_INTERLOCK_FRACTION: float = 0.05
 # State machine
 # ---------------------------------------------------------------------------
 
+
 class StagingPhase(Enum):
     """Staging-sequencer states."""
-    NOMINAL = auto()       # Burning on current stage
-    TAIL_OFF = auto()      # S1 engine shutting down
-    COAST = auto()         # Unpowered gap between stages
-    SEPARATION = auto()    # Mass drop (instantaneous)
-    S2_IGNITION = auto()   # S2 engine ramping up
-    COMPLETE = auto()      # Separation finished — normal ops on next stage
+
+    NOMINAL = auto()  # Burning on current stage
+    TAIL_OFF = auto()  # S1 engine shutting down
+    COAST = auto()  # Unpowered gap between stages
+    SEPARATION = auto()  # Mass drop (instantaneous)
+    S2_IGNITION = auto()  # S2 engine ramping up
+    COMPLETE = auto()  # Separation finished — normal ops on next stage
 
 
 class StagingSequencer:
@@ -94,7 +94,7 @@ class StagingSequencer:
 
     # -- Update --------------------------------------------------------------
 
-    def update(self, dt: float) -> Optional[str]:
+    def update(self, dt: float) -> str | None:
         """Advance the staging state machine by *dt* seconds.
 
         Parameters
@@ -111,7 +111,7 @@ class StagingSequencer:
         if self._separation_complete:
             return None
 
-        event: Optional[str] = None
+        event: str | None = None
 
         # ------------------------------------------------------------------
         if self._phase is StagingPhase.NOMINAL:

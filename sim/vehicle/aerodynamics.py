@@ -29,6 +29,7 @@ _cd_interp: interp1d = interp1d(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def mach_number(v: float, speed_of_sound: float) -> float:
     """Compute the Mach number.
 
@@ -87,6 +88,7 @@ def dynamic_pressure(rho: float, v: float) -> float:
 # ---------------------------------------------------------------------------
 # Main aerodynamic model
 # ---------------------------------------------------------------------------
+
 
 class AerodynamicsModel:
     """Stateful aerodynamics model that tracks max-q and stability metrics.

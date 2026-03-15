@@ -15,9 +15,9 @@ from __future__ import annotations
 import numpy as np
 
 from sim import config
-from sim.core.state import VehicleState
 from sim.core.reference_frames import quat_to_dcm
-from sim.gnc.sensors import IMUMeasurement, GPSMeasurement, BaroMeasurement
+from sim.core.state import VehicleState
+from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement
 
 
 class NavigationEKF:
@@ -42,12 +42,22 @@ class NavigationEKF:
         # biases initialised to zero
 
         # Covariance
-        self._P = np.diag([
-            100.0, 100.0, 100.0,         # position (m^2)
-            1.0, 1.0, 1.0,               # velocity (m/s)^2
-            1e-4, 1e-4, 1e-4,            # accel bias
-            1e-6, 1e-6, 1e-6,            # gyro bias
-        ])
+        self._P = np.diag(
+            [
+                100.0,
+                100.0,
+                100.0,  # position (m^2)
+                1.0,
+                1.0,
+                1.0,  # velocity (m/s)^2
+                1e-4,
+                1e-4,
+                1e-4,  # accel bias
+                1e-6,
+                1e-6,
+                1e-6,  # gyro bias
+            ]
+        )
 
         # Store latest quaternion estimate (propagated externally or from
         # the attitude controller; the EKF does not estimate attitude).
@@ -103,8 +113,8 @@ class NavigationEKF:
         # Current estimates
         pos = self._x[0:3]
         vel = self._x[3:6]
-        ba = self._x[6:9]    # accel bias estimate (body)
-        bg = self._x[9:12]   # gyro bias estimate (body)
+        ba = self._x[6:9]  # accel bias estimate (body)
+        bg = self._x[9:12]  # gyro bias estimate (body)
 
         # Corrected IMU readings
         accel_body_corrected = imu.accel_body_mps2 - ba
@@ -132,15 +142,15 @@ class NavigationEKF:
         # -- Covariance propagation via linearised dynamics --
         # State transition Jacobian F (12x12)
         F = np.eye(self.N_STATES)
-        F[0:3, 3:6] = np.eye(3) * dt                       # dp/dv
-        F[0:3, 6:9] = -0.5 * R_body2eci * dt**2            # dp/dba
-        F[3:6, 6:9] = -R_body2eci * dt                     # dv/dba
+        F[0:3, 3:6] = np.eye(3) * dt  # dp/dv
+        F[0:3, 6:9] = -0.5 * R_body2eci * dt**2  # dp/dba
+        F[3:6, 6:9] = -R_body2eci * dt  # dv/dba
 
         # Process noise covariance Q
         Q = np.zeros((self.N_STATES, self.N_STATES))
         # Position and velocity noise from accelerometer noise
         accel_var = config.IMU_ACCEL_NOISE_MPS2**2
-        gyro_var = config.IMU_GYRO_NOISE_RADS**2
+        _gyro_var = config.IMU_GYRO_NOISE_RADS**2  # noqa: F841 (reserved for gyro process noise)
         Q[0:3, 0:3] = np.eye(3) * accel_var * dt**4 / 4.0
         Q[3:6, 3:6] = np.eye(3) * accel_var * dt**2
         Q[0:3, 3:6] = np.eye(3) * accel_var * dt**3 / 2.0
@@ -178,14 +188,16 @@ class NavigationEKF:
         H[0:6, 0:6] = np.eye(6)
 
         # Measurement noise
-        R = np.diag([
-            config.GPS_POS_NOISE_M**2,
-            config.GPS_POS_NOISE_M**2,
-            config.GPS_POS_NOISE_M**2,
-            config.GPS_VEL_NOISE_MS**2,
-            config.GPS_VEL_NOISE_MS**2,
-            config.GPS_VEL_NOISE_MS**2,
-        ])
+        R = np.diag(
+            [
+                config.GPS_POS_NOISE_M**2,
+                config.GPS_POS_NOISE_M**2,
+                config.GPS_POS_NOISE_M**2,
+                config.GPS_VEL_NOISE_MS**2,
+                config.GPS_VEL_NOISE_MS**2,
+                config.GPS_VEL_NOISE_MS**2,
+            ]
+        )
 
         self._apply_update(y, H, R)
 

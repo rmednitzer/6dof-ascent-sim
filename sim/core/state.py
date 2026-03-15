@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -32,7 +31,8 @@ class VehicleState:
 
     def altitude_m(self) -> float:
         """Geodetic altitude above WGS84 ellipsoid (m)."""
-        from sim.core.reference_frames import eci_to_ecef, ecef_to_lla
+        from sim.core.reference_frames import ecef_to_lla, eci_to_ecef
+
         r = np.linalg.norm(self.position_eci)
         if r < 1.0:
             return 0.0
