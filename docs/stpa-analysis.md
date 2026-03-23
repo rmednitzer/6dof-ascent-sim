@@ -126,3 +126,55 @@ Continuous multi-channel assessment with four severity levels: NOMINAL, WARNING,
 | **Propellant depletion guard** | UCA-8, CS-8 | Boundary enforcer forces throttle to 0 when propellant remaining <= 0 |
 | **Latching FTS** | H-1 through H-4 | Once triggered, FTS cannot be reset. Simulation terminates with `FTS_ABORT` outcome |
 | **NaN/Inf guard** | All | Integrator checks all state components for NaN/Inf after each RK4 step, raises `RuntimeError` on detection |
+
+## 7. EU Regulatory Cross-References
+
+This STPA analysis maps to the following EU regulatory requirements. See
+`docs/eu-legal-validation.md` for the full assessment.
+
+### 7.1 AI Act (EU) 2024/1689
+
+The GNC subsystems (EKF, PID controller, guidance law) are **deterministic
+algorithms** and do not meet the AI system definition in Art. 3(1). The FTS
+and BoundaryEnforcer are **safety components** (Art. 3(14)) but are not AI
+systems, so Art. 6(1) high-risk classification does not apply.
+
+**If ML/AI components are added to guidance or control**, the entire GNC stack
+would likely be classified as a **high-risk AI system** (Art. 6(1)(a)+(b)),
+requiring compliance with Arts. 9–15 including:
+- Art. 9: Risk management system (this STPA analysis would form the foundation)
+- Art. 12: Record-keeping (telemetry recorder already provides this)
+- Art. 14: Human oversight (FTS provides deterministic override capability)
+- Art. 15: Accuracy, robustness, cybersecurity
+
+### 7.2 Cyber Resilience Act (EU) 2024/2847
+
+| STPA Mitigation | CRA Alignment |
+|---|---|
+| Boundary Enforcer (command clamping) | Annex I, Part I, §2 — secure by default |
+| NaN/Inf guard | Annex I, Part I, §1 — no exploitable vulnerabilities |
+| SHA-256 telemetry hash | Annex I, Part I, §3 — data integrity |
+| Innovation gating (EKF) | Annex I, Part I, §2 — resilience to input errors |
+
+### 7.3 Product Liability Directive (EU) 2024/2853
+
+The documented losses (L-1 through L-3), hazards, and mitigations in this
+STPA analysis directly support the **defectiveness assessment** under PLD
+Art. 7. By explicitly documenting modelling assumptions (`docs/assumptions.md`)
+and known failure modes, the simulation's limitations are part of its
+"presentation" for PLD purposes.
+
+### 7.4 NIS2 Directive (EU) 2022/2555
+
+| NIS2 Art. 21 Requirement | STPA Coverage |
+|---|---|
+| Art. 21(2)(a) — Risk analysis | Sections 1–4: Losses, hazards, UCAs, causal scenarios |
+| Art. 21(2)(b) — Incident handling | Section 5: FTS autonomous abort (latching, irrevocable) |
+| Art. 21(2)(d) — Supply chain security | Sections 5–6: Boundary enforcement at all component interfaces |
+
+### 7.5 Export Control (EU) 2021/821
+
+All guidance algorithms documented in this STPA are **publicly available
+textbook methods** (gravity turn, linear tangent steering, standard EKF).
+They fall under the General Technology Note exclusion for fundamental research
+and publicly available technology.

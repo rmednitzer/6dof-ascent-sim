@@ -1,5 +1,14 @@
 # Modeling Assumptions and Simplifications
 
+> **Fidelity disclaimer:** This simulation is an educational and research tool.
+> It is **not suitable for flight certification, launch licensing, or
+> safety-of-flight decisions** without independent verification and validation
+> (V&V) against higher-fidelity models and flight test data. The simplifications
+> documented below introduce modelling errors that may not bound worst-case
+> flight conditions. Any use of this simulation in a regulatory or certification
+> context must be independently assessed. See `docs/eu-legal-validation.md` for
+> the EU regulatory applicability analysis.
+
 ## Earth Model
 
 - **WGS84 ellipsoid** with semi-major axis 6,378,137 m and flattening 1/298.257223563 (`sim/config.py`).
