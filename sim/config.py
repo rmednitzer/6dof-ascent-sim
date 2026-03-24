@@ -9,6 +9,10 @@ TARGET_VELOCITY_MS = 7_670  # Approximate circular velocity at 400 km
 EARTH_RADIUS_M = 6_378_137.0  # WGS84 semi-major axis
 EARTH_MU = 3.986004418e14  # GM (m³/s²)
 EARTH_J2 = 1.08263e-3  # J2 oblateness coefficient
+EARTH_J3 = -2.53215e-6  # J3 zonal harmonic (pear-shaped asymmetry)
+EARTH_J4 = -1.61099e-6  # J4 zonal harmonic
+EARTH_J5 = -2.27274e-7  # J5 zonal harmonic
+EARTH_J6 = 5.40682e-7  # J6 zonal harmonic
 EARTH_OMEGA = 7.2921150e-5  # Rotation rate (rad/s)
 EARTH_FLATTENING = 1.0 / 298.257223563  # WGS84 flattening
 
@@ -47,15 +51,27 @@ CD_TABLE_VALUE = [0.30, 0.30, 0.35, 0.50, 0.45, 0.35, 0.30, 0.25, 0.20]
 REFERENCE_AREA_M2 = 10.52  # Cross-section area (3.66m diameter)
 COP_OFFSET_FROM_NOSE_M = 12.0  # Approximate center of pressure
 VEHICLE_LENGTH_M = 70.0  # Total vehicle length
+# Normal force coefficient slope (per radian) — slender body theory
+# Barrowman (1967): CN_alpha ~ 2.0 for body-of-revolution, adjusted for fineness ratio
+CN_ALPHA_TABLE_MACH = [0.0, 0.5, 0.8, 1.0, 1.2, 2.0, 3.0, 5.0, 10.0]
+CN_ALPHA_TABLE_VALUE = [2.0, 2.0, 2.2, 2.8, 2.6, 2.2, 2.0, 1.8, 1.5]  # per radian
+# Pitch damping coefficient Cmq (per rad/s normalized by 2V/L)
+# Typical: -0.5 to -2.0 for slender rockets (Nelson, "Flight Stability", 1998)
+CMQ_PITCH_DAMPING = -1.2
 
 # ---------- Structural limits ----------
 MAX_Q_PA = 35_000  # Max dynamic pressure (Pa)
 MAX_AXIAL_G = 6.0  # Max axial acceleration (g)
 MAX_LATERAL_G = 0.5  # Max lateral acceleration (g)
 
-# ---------- TVC actuator limits ----------
+# ---------- TVC actuator ----------
 TVC_MAX_DEFLECTION_DEG = 5.0
-TVC_MAX_SLEW_RATE_DEG_S = 10.0
+TVC_MAX_SLEW_RATE_DEG_S = 20.0  # Increased for S2 exoatmospheric maneuvers
+# Second-order actuator dynamics (Wie, "Space Vehicle Dynamics and Control",
+# 2nd ed., Ch. 7). Typical hydraulic TVC servoactuator parameters:
+TVC_ACTUATOR_NATURAL_FREQ_HZ = 25.0  # Actuator bandwidth (Hz)
+TVC_ACTUATOR_DAMPING_RATIO = 0.7  # Damping ratio (critically damped ~0.7)
+TVC_ACTUATOR_DYNAMICS_ENABLED = True  # Toggle actuator dynamics
 
 # ---------- EKF parameters ----------
 IMU_ACCEL_NOISE_MPS2 = 0.01  # Accelerometer noise (m/s²)
@@ -108,10 +124,17 @@ PITCH_KICK_TIME_S = 7.0  # Time to initiate gravity turn
 VERTICAL_RISE_TIME_S = 7.0  # Duration of vertical rise phase
 
 # ---------- Control gains ----------
+# Baseline gains at reference condition (q=10kPa, full mass)
+# Gain scheduling scales these with dynamic pressure and mass ratio
+# Reference: Greensite, "Analysis and Design of Space Vehicle Flight
+# Control Systems", NASA CR-820, 1967.
 CONTROL_KP = 2.0
 CONTROL_KD = 1.5
 CONTROL_KI = 0.1
 CONTROL_INTEGRATOR_LIMIT_DEG = 2.0  # Anti-windup limit
+CONTROL_Q_REF_PA = 10_000.0  # Reference dynamic pressure for gain scheduling
+CONTROL_MASS_REF_KG = 300_000.0  # Reference mass for gain scheduling
+CONTROL_GAIN_SCHEDULE_ENABLED = True  # Toggle gain scheduling
 
 # ---------- Atmospheric pressure at sea level ----------
 P_SL = 101325.0  # Sea-level pressure (Pa)

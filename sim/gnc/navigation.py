@@ -3,11 +3,23 @@
 12-state EKF estimating position, velocity, accelerometer bias, and gyro bias
 using IMU, GPS, and barometric altimeter measurements.
 
+Includes coning and sculling compensation for strapdown IMU mechanization,
+following Savage's two-sample algorithm.
+
 State vector: [px, py, pz, vx, vy, vz, bax, bay, baz, bgx, bgy, bgz]
     - position (ECI, m)
     - velocity (ECI, m/s)
     - accelerometer bias (body frame, m/s^2)
     - gyro bias (body frame, rad/s)
+
+References:
+    Savage, P.G., "Strapdown Inertial Navigation Integration Algorithm
+    Design Part 1: Attitude Algorithms", AIAA Journal of Guidance,
+    Control, and Dynamics, Vol. 21, No. 1, 1998.
+    Savage, P.G., "Strapdown Inertial Navigation Integration Algorithm
+    Design Part 2: Velocity and Position Algorithms", AIAA JGCD, 1998.
+    Titterton & Weston, *Strapdown Inertial Navigation Technology*,
+    2nd ed., Ch. 11.
 """
 
 from __future__ import annotations
@@ -21,12 +33,16 @@ from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement
 
 
 class NavigationEKF:
-    """12-state Extended Kalman Filter for ascent navigation.
+    """12-state Extended Kalman Filter with coning/sculling compensation.
 
-    Predict at 100 Hz using strapdown IMU mechanisation.  Update with GPS
-    (1 Hz, below 60 km) and barometer (10 Hz, below 40 km).  An innovation
-    gate rejects measurements whose residual exceeds
-    ``EKF_RESIDUAL_SIGMA_THRESHOLD`` standard deviations.
+    Predict at 100 Hz using strapdown IMU mechanisation with Savage's
+    two-sample coning and sculling corrections.  Update with GPS
+    (1 Hz, below 60 km) and barometer (10 Hz, below 40 km).
+
+    Coning compensation corrects for non-commutativity of finite rotations
+    under angular vibration.  Sculling compensation corrects for the
+    correlation between angular and linear vibrations that causes a
+    spurious velocity drift.
 
     Args:
         initial_state: Vehicle state used to seed the filter.
@@ -59,12 +75,16 @@ class NavigationEKF:
             ]
         )
 
-        # Store latest quaternion estimate (propagated externally or from
-        # the attitude controller; the EKF does not estimate attitude).
+        # Store latest quaternion estimate
         self._quaternion = initial_state.quaternion.copy()
         self._angular_velocity_body = initial_state.angular_velocity_body.copy()
         self._mass_kg = initial_state.mass_kg
         self._time_s = initial_state.time_s
+
+        # Previous IMU samples for coning/sculling compensation
+        self._prev_gyro: np.ndarray = np.zeros(3)
+        self._prev_accel: np.ndarray = np.zeros(3)
+        self._prev_imu_valid: bool = False
 
     # -- public properties ---------------------------------------------------
 
@@ -96,12 +116,18 @@ class NavigationEKF:
     ) -> None:
         """Propagate state and covariance using IMU measurement.
 
-        Strapdown mechanisation:
-            p_new = p + v*dt + 0.5*a_eci*dt^2
-            v_new = v + a_eci*dt
-        where a_eci = DCM^T * (accel_body - bias_accel) + gravity.
+        Implements Savage's two-sample coning and sculling compensation:
 
-        Biases are modelled as random walks (constant + process noise).
+        **Coning correction** (attitude): Accounts for the fact that under
+        simultaneous rotation about two axes, the naive integration of
+        angular increments drifts.  The two-sample correction is:
+            delta_theta_coning = (2/3) * (theta_prev x theta_curr)
+        where theta = omega * dt is the angular increment.
+
+        **Sculling correction** (velocity): Accounts for correlation
+        between angular and linear vibrations that produces a net
+        velocity error.  The two-sample correction is:
+            delta_v_sculling = (2/3) * (theta_prev x dv_curr + dv_prev x theta_curr)
 
         Args:
             imu: IMU measurement for this timestep.
@@ -113,44 +139,70 @@ class NavigationEKF:
         # Current estimates
         pos = self._x[0:3]
         vel = self._x[3:6]
-        ba = self._x[6:9]  # accel bias estimate (body)
-        bg = self._x[9:12]  # gyro bias estimate (body)
+        ba = self._x[6:9]
+        bg = self._x[9:12]
 
         # Corrected IMU readings
         accel_body_corrected = imu.accel_body_mps2 - ba
         gyro_body_corrected = imu.gyro_body_rads - bg
 
-        # Body-to-ECI rotation (DCM^T since quat_to_dcm gives ECI-to-body)
+        # Angular and velocity increments for this sample
+        theta_curr = gyro_body_corrected * dt  # angular increment (rad)
+        dv_curr = accel_body_corrected * dt  # velocity increment (m/s)
+
+        # --- Coning compensation (Savage two-sample) ---
+        # Corrects for non-commutativity of finite rotations
+        if self._prev_imu_valid:
+            theta_prev = self._prev_gyro * dt
+            dv_prev = self._prev_accel * dt
+
+            # Coning correction to angular increment
+            coning_correction = (2.0 / 3.0) * np.cross(theta_prev, theta_curr)
+            theta_corrected = theta_curr + coning_correction
+
+            # Sculling correction to velocity increment
+            sculling_correction = (2.0 / 3.0) * (np.cross(theta_prev, dv_curr) + np.cross(dv_prev, theta_curr))
+            dv_corrected = dv_curr + sculling_correction
+
+            # Rotation compensation for velocity (accounts for rotation
+            # during the integration interval)
+            dv_rot_comp = 0.5 * np.cross(theta_corrected, dv_corrected)
+            dv_body = dv_corrected + dv_rot_comp
+        else:
+            dv_body = dv_curr
+
+        # Store current samples for next iteration
+        self._prev_gyro = gyro_body_corrected.copy()
+        self._prev_accel = accel_body_corrected.copy()
+        self._prev_imu_valid = True
+
+        # Body-to-ECI rotation
         R_body2eci = quat_to_dcm(self._quaternion).T
 
-        # Specific force in ECI
-        accel_eci = R_body2eci @ accel_body_corrected
+        # Specific force in ECI (using compensated velocity increment)
+        dv_eci = R_body2eci @ dv_body
 
-        # Total acceleration in ECI (specific force + gravity)
-        a_total = accel_eci + gravity_eci_mps2
+        # Total velocity change in ECI
+        dv_total = dv_eci + gravity_eci_mps2 * dt
 
-        # State propagation
-        self._x[0:3] = pos + vel * dt + 0.5 * a_total * dt**2
-        self._x[3:6] = vel + a_total * dt
-        # Biases: random walk, no deterministic drift
-        # self._x[6:9] unchanged
-        # self._x[9:12] unchanged
+        # State propagation — position MUST be updated before velocity
+        # because pos and vel are numpy views into self._x (aliasing)
+        self._x[0:3] = pos + vel * dt + 0.5 * dv_total * dt
+        self._x[3:6] = vel + dv_total
 
         # Update stored angular velocity
         self._angular_velocity_body = gyro_body_corrected.copy()
 
         # -- Covariance propagation via linearised dynamics --
-        # State transition Jacobian F (12x12)
         F = np.eye(self.N_STATES)
-        F[0:3, 3:6] = np.eye(3) * dt  # dp/dv
-        F[0:3, 6:9] = -0.5 * R_body2eci * dt**2  # dp/dba
-        F[3:6, 6:9] = -R_body2eci * dt  # dv/dba
+        F[0:3, 3:6] = np.eye(3) * dt
+        F[0:3, 6:9] = -0.5 * R_body2eci * dt**2
+        F[3:6, 6:9] = -R_body2eci * dt
 
         # Process noise covariance Q
         Q = np.zeros((self.N_STATES, self.N_STATES))
-        # Position and velocity noise from accelerometer noise
         accel_var = config.IMU_ACCEL_NOISE_MPS2**2
-        _gyro_var = config.IMU_GYRO_NOISE_RADS**2  # noqa: F841 (reserved for gyro process noise)
+        gyro_var = config.IMU_GYRO_NOISE_RADS**2
         Q[0:3, 0:3] = np.eye(3) * accel_var * dt**4 / 4.0
         Q[3:6, 3:6] = np.eye(3) * accel_var * dt**2
         Q[0:3, 3:6] = np.eye(3) * accel_var * dt**3 / 2.0
@@ -158,10 +210,11 @@ class NavigationEKF:
         # Bias random walk
         Q[6:9, 6:9] = np.eye(3) * config.IMU_ACCEL_BIAS_MPS2**2 * dt
         Q[9:12, 9:12] = np.eye(3) * config.IMU_GYRO_BIAS_RADS**2 * dt
+        # Gyro noise contribution to velocity (via attitude error)
+        # This cross-coupling was previously missing
+        Q[3:6, 3:6] += np.eye(3) * gyro_var * float(np.dot(accel_body_corrected, accel_body_corrected)) * dt**2
 
         self._P = F @ self._P @ F.T + Q
-
-        # Symmetrise to avoid numerical drift
         self._P = 0.5 * (self._P + self._P.T)
 
     # -- update steps --------------------------------------------------------

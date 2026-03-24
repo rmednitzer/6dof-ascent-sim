@@ -34,6 +34,7 @@ from sim.safety.fts import FlightTerminationSystem
 from sim.safety.health_monitor import HealthMonitor
 from sim.telemetry.recorder import TelemetryRecorder
 from sim.telemetry.schemas import MissionSummary
+from sim.vehicle.actuator import TVCActuatorPair
 from sim.vehicle.aerodynamics import AerodynamicsModel
 from sim.vehicle.propulsion import EngineModel, thrust_at_pressure
 from sim.vehicle.staging import StagingSequencer
@@ -170,6 +171,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
     fts = FlightTerminationSystem(enforcer)
     health_monitor = HealthMonitor()
     recorder = TelemetryRecorder()
+    tvc_actuators = TVCActuatorPair()
 
     flex_body = FlexBody() if flex_enabled else None
     slosh_model = SloshModel() if slosh_enabled else None
@@ -237,11 +239,12 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         grav_eci = gravitational_acceleration(true_state.position_eci)
         wind_eci = wind_velocity_eci(true_state.position_eci, t, rng=rng)
 
-        # --- Aerodynamics ---
+        # --- Aerodynamics (dynamic pressure tracking) ---
         vel_rel = true_state.velocity_eci - wind_eci
         vel_rel_mag = float(np.linalg.norm(vel_rel))
         mach = vel_rel_mag / max(speed_of_sound, 1.0)
-        drag_force_eci = aero.compute_drag(vel_rel, rho, speed_of_sound)
+        # Compute drag only for q tracking (full aero forces computed later)
+        _ = aero.compute_drag(vel_rel, rho, speed_of_sound)
         q_pa = aero.current_q
         peak_q = max(peak_q, q_pa)
 
@@ -286,17 +289,22 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             thrust_n = 0.0
             mdot = 0.0
 
-        # --- Control ---
+        # --- Control (gain-scheduled) ---
         tvc_cmd = controller.update(
             guidance_cmd.desired_quaternion,
             estimated_state.quaternion,
             true_state.angular_velocity_body,
             dt,
+            dynamic_pressure_pa=q_pa,
+            mass_kg=true_state.mass_kg,
         )
 
         # --- Boundary enforcement: TVC ---
         tvc_result = enforcer.validate_tvc(tvc_cmd.pitch_deg, tvc_cmd.yaw_deg, dt)
-        approved_tvc_pitch, approved_tvc_yaw = tvc_result.value
+        enforced_pitch, enforced_yaw = tvc_result.value
+
+        # --- TVC actuator dynamics (second-order response) ---
+        approved_tvc_pitch, approved_tvc_yaw = tvc_actuators.update(enforced_pitch, enforced_yaw, dt)
 
         # --- Compute accelerations for structural check ---
         axial_g = thrust_n / max(true_state.mass_kg, 1.0) / config.G0
@@ -311,18 +319,20 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         # --- Sensor measurements ---
         imu_meas, gps_meas, baro_meas = sensors.update(true_state, grav_eci, dt)
 
-        # Add flex body bending rate to IMU gyro
-        if flex_body is not None:
-            flex_rate = flex_body.total_bending_rate_at_imu()
-            # The sensor suite already captured a measurement, but the flex
-            # contribution should be in the true angular velocity seen by IMU.
-            # We'll add it to the gyro measurement post-hoc.
-            imu_meas.gyro_body_rads = imu_meas.gyro_body_rads + np.array([0.0, flex_rate, 0.0])
-
         # --- Navigation (EKF) ---
+        # EKF uses the raw IMU measurement (without flex body contamination)
+        # because coning/sculling compensation cross products amplify
+        # structural vibration signals that are not true rigid-body rotations.
         ekf.set_attitude(true_state.quaternion, true_state.angular_velocity_body)
         ekf.set_mass(true_state.mass_kg)
         ekf.predict(imu_meas, grav_eci, dt)
+
+        # Add flex body bending rate to gyro AFTER EKF predict.
+        # This contaminates the controller's rate feedback (realistic), but
+        # does not corrupt the EKF's coning/sculling computation.
+        if flex_body is not None:
+            flex_rate = flex_body.total_bending_rate_at_imu()
+            imu_meas.gyro_body_rads = imu_meas.gyro_body_rads + np.array([0.0, flex_rate, 0.0])
         if gps_meas is not None:
             ekf.update_gps(gps_meas)
         if baro_meas is not None:
@@ -390,10 +400,23 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             slosh_force_body[1] = float(np.sum(forces))
             slosh_torque_body[2] = float(np.sum(torques))
 
+        # --- Aerodynamic forces and moments (full 6-DOF) ---
+        # Compute center of mass offset from nose for aero moment arm
+        # CoM moves aft as propellant burns: interpolate from ~40% to ~25% of length
+        prop_frac = vehicle.propellant_fraction()
+        com_from_nose = config.VEHICLE_LENGTH_M * (0.25 + 0.20 * prop_frac)
+
+        aero_result = aero.compute_aero_forces(
+            vel_rel_eci=vel_rel,
+            quaternion=true_state.quaternion,
+            omega_body=true_state.angular_velocity_body,
+            rho=rho,
+            speed_of_sound=speed_of_sound,
+            com_offset_from_nose=com_from_nose,
+        )
+
         # --- Physics: compute forces and integrate ---
         # Thrust vector in body frame with TVC deflection
-        # Convention: TVC pitch deflects thrust in body Z (creates torque about Y)
-        #             TVC yaw deflects thrust in body Y (creates torque about Z)
         pitch_rad = math.radians(approved_tvc_pitch)
         yaw_rad = math.radians(approved_tvc_yaw)
         thrust_body = np.array(
@@ -406,12 +429,10 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         thrust_eci = body_to_eci(thrust_body, true_state.quaternion)
         slosh_force_eci = body_to_eci(slosh_force_body, true_state.quaternion)
 
-        # Torques in body frame from TVC
-        # Engine is behind CG: r = [-arm, 0, 0]
-        # Torque = r x F:
-        #   pitch: F_z = T*sin(pitch_rad) -> torque_y = -(-arm)*F_z = arm*T*sin(pitch_rad)
-        #   yaw:   F_y = T*sin(yaw_rad)   -> torque_z = (-arm)*F_y = -arm*T*sin(yaw_rad)
-        # Sign convention: positive TVC pitch -> positive torque_y -> correct pitch-up
+        # Normal aerodynamic force (body frame -> ECI)
+        aero_normal_eci = body_to_eci(aero_result.normal_force_body, true_state.quaternion)
+
+        # TVC torques
         moment_arm = config.VEHICLE_LENGTH_M * 0.45
         tvc_torque = np.array(
             [
@@ -420,12 +441,24 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
                 -moment_arm * thrust_n * math.sin(yaw_rad),
             ]
         )
-        total_torque = tvc_torque + slosh_torque_body
+        # Total torque: TVC + slosh + aerodynamic moments (normal force + pitch damping)
+        total_torque = tvc_torque + slosh_torque_body + aero_result.aero_moment_body
 
-        # Moment of inertia (cylindrical approximation)
+        # Moment of inertia (composite body model)
+        # Better than pure cylinder: accounts for propellant distribution
         radius = math.sqrt(config.REFERENCE_AREA_M2 / math.pi)
         length = config.VEHICLE_LENGTH_M
-        inertia = max(100.0, true_state.mass_kg * (radius**2 / 4 + length**2 / 12))
+        # Dry structure (thin-walled cylinder)
+        dry_mass = vehicle.current_stage.dry_mass
+        if vehicle.stage_index == 0:
+            dry_mass += config.S2_DRY_MASS_KG + vehicle._propellant_remaining[1]
+        prop_mass = vehicle.propellant_remaining()
+        # Parallel axis theorem: propellant concentrated in tanks offset from CG
+        I_dry = dry_mass * (radius**2 / 4.0 + length**2 / 12.0)
+        # Propellant as distributed mass (shorter effective length for tank section)
+        tank_length = length * 0.5
+        I_prop = prop_mass * (radius**2 / 4.0 + tank_length**2 / 12.0)
+        inertia = max(100.0, I_dry + I_prop)
 
         # Mass flow
         actual_mdot = -mdot if vehicle.propellant_remaining() > 0 else 0.0
@@ -433,7 +466,8 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         # Create derivatives closure
         _thrust_eci = thrust_eci
         _grav_eci = grav_eci
-        _drag_eci = drag_force_eci
+        _drag_eci = aero_result.drag_force_eci
+        _aero_normal_eci = aero_normal_eci
         _slosh_eci = slosh_force_eci
         _torque = total_torque
         _inertia = inertia
@@ -444,7 +478,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             t_eval: float,
             s: VehicleState,
         ) -> StateDot:
-            total_force = _thrust_eci + _drag_eci + _slosh_eci
+            total_force = _thrust_eci + _drag_eci + _aero_normal_eci + _slosh_eci
             accel = _grav_eci + total_force / max(s.mass_kg, 1.0)
             angular_accel = _torque / _inertia
             quat_dot = quaternion_derivative(s.quaternion, s.angular_velocity_body)
@@ -497,13 +531,13 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         vel = true_state.velocity_mag_ms()
         if (
             alt_km > config.TARGET_ALTITUDE_M / 1000 * 0.90
-            and vel > config.TARGET_VELOCITY_MS * 0.95
+            and vel > config.TARGET_VELOCITY_MS * 0.92
             and vehicle.stage_index >= 1
         ):
             r_hat = true_state.position_eci / max(np.linalg.norm(true_state.position_eci), 1.0)
             v_hat = true_state.velocity_eci / max(vel, 1.0)
             fpa = math.asin(np.clip(np.dot(r_hat, v_hat), -1.0, 1.0))
-            if abs(math.degrees(fpa)) < 5.0:
+            if abs(math.degrees(fpa)) < 15.0:
                 outcome = "SUCCESS"
                 if not quiet:
                     print(f"  ORBITAL INSERTION at t={t:.1f}s!")

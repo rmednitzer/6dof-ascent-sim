@@ -112,19 +112,22 @@ class TestUpperAtmosphere:
         assert rho_100 < rho_86
         assert rho_150 < rho_100
 
-    def test_vacuum_above_200km(self):
-        """Above 200 km the atmosphere should return zero density."""
-        result = atmosphere(200_001.0)
-        assert result.density_kg_m3 == 0.0
-        assert result.pressure_pa == 0.0
+    def test_density_decreases_above_200km(self):
+        """Above 200 km density should be extremely small but non-zero
+        (multi-layer thermosphere model extends to 1000 km)."""
+        result_200 = atmosphere(200_000.0)
+        result_500 = atmosphere(500_000.0)
+        # Density at 200 km should be ~1e-10 (NRLMSISE-00 moderate solar)
+        assert result_200.density_kg_m3 < 1e-8
+        assert result_200.density_kg_m3 > 0.0
+        # Density continues to decrease with altitude
+        assert result_500.density_kg_m3 < result_200.density_kg_m3
 
-    def test_very_high_altitude_returns_zeros(self):
-        """At 500 km altitude (well above exosphere ceiling)."""
-        result = atmosphere(500_000.0)
+    def test_vacuum_above_1000km(self):
+        """Above 1000 km the atmosphere should return zero density."""
+        result = atmosphere(1_100_000.0)
         assert result.density_kg_m3 == 0.0
         assert result.pressure_pa == 0.0
-        assert result.temperature_k == 0.0
-        assert result.speed_of_sound_ms == 0.0
 
 
 class TestAtmosphereResult:
