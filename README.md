@@ -1,5 +1,9 @@
 # 6-DOF Launch Vehicle Ascent Simulation
 
+[![CI](https://github.com/rmednitzer/6dof-ascent-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/rmednitzer/6dof-ascent-sim/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+
 A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch vehicle from ignition through LEO insertion.
 
 ## Features
