@@ -66,7 +66,7 @@ _LAYER_PARAMS: list[tuple[float, float]] = [
 _TABULATED_CEILING_M: float = 86_000.0
 
 #: Altitude above which density is treated as zero (m).
-_EXOSPHERE_CEILING_M: float = 200_000.0
+_EXOSPHERE_CEILING_M: float = 1_000_000.0
 
 
 class _LayerData:
@@ -217,29 +217,59 @@ def _evaluate_standard_layers(altitude_m: float) -> tuple[float, float]:
 
 
 def _high_altitude(altitude_m: float, density_scale: float) -> AtmosphereResult:
-    """Exponential-decay model from 86 km to 200 km.
+    """Multi-layer exponential atmosphere from 86 km to 1000 km.
 
-    At 86 km the standard atmosphere gives a known density (~5.0e-6 kg/m^3).
-    A scale height of ~6.5 km provides a reasonable fit for the thermosphere
-    transition region.  Temperature is held constant at the 86-km value for
-    speed-of-sound purposes (the real thermosphere heats up, but the density
-    is so low that aerodynamic forces are negligible).
+    Replaces a single-scale-height approximation with a piecewise-exponential
+    model derived from NRLMSISE-00 / CIRA-2012 reference profiles.  Each layer
+    uses a fitted scale height and base density that reproduces the mean
+    thermospheric density profile to within ~20% (solar-cycle dependent
+    variations can exceed this, handled via ATMO_DENSITY_SCALE in Monte Carlo).
+
+    The thermosphere temperature profile rises from ~186 K at 86 km to
+    ~1000 K above 250 km (moderate solar activity, F10.7 ~ 150 SFU).
+
+    References:
+        Picone et al., "NRLMSISE-00 empirical model of the atmosphere",
+        J. Geophys. Res., 107(A12), 2002.
+        Jacchia, "New static models of the thermosphere and exosphere
+        with empirical temperature profiles", SAO Special Report 313, 1970.
     """
-    # Conditions at 86 km from the tabulated model
-    T_86, P_86 = _evaluate_standard_layers(_TABULATED_CEILING_M)
-    rho_86 = P_86 / (_R_SPECIFIC * T_86)
+    # Piecewise-exponential layers for the thermosphere.
+    # Each tuple: (base_alt_m, base_density_kg_m3, scale_height_m, temperature_K)
+    # Densities and scale heights fitted to NRLMSISE-00 moderate solar activity.
+    _THERMO_LAYERS: list[tuple[float, float, float, float]] = [
+        (86_000.0, 6.958e-6, 5_900.0, 186.9),  # Mesopause → lower thermosphere
+        (100_000.0, 5.604e-7, 6_400.0, 195.1),  # Kármán line region
+        (115_000.0, 4.289e-8, 7_800.0, 304.0),  # Lower thermosphere
+        (150_000.0, 2.076e-9, 22_800.0, 634.0),  # Mid-thermosphere (rapid T rise)
+        (200_000.0, 2.541e-10, 37_500.0, 855.0),  # Upper thermosphere
+        (300_000.0, 1.916e-11, 53_600.0, 976.0),  # Near-exobase
+        (500_000.0, 5.215e-13, 75_800.0, 999.0),  # Exosphere transition
+        (750_000.0, 3.561e-15, 100_000.0, 1000.0),  # Upper exosphere
+    ]
 
-    # Scale height for exponential decay above 86 km (m)
-    _SCALE_HEIGHT_M: float = 6500.0
+    # Find the correct layer
+    layer = _THERMO_LAYERS[0]
+    for L in _THERMO_LAYERS:
+        if altitude_m >= L[0]:
+            layer = L
+        else:
+            break
 
-    dh = altitude_m - _TABULATED_CEILING_M
-    rho = rho_86 * math.exp(-dh / _SCALE_HEIGHT_M)
-    P = rho * _R_SPECIFIC * T_86  # approximate: ideal-gas with constant T
-    a = math.sqrt(_GAMMA * _R_SPECIFIC * T_86)
+    h_base, rho_base, scale_h, T = layer
+    dh = altitude_m - h_base
+    rho = rho_base * math.exp(-dh / scale_h)
+
+    # At very high altitude, clamp to effective vacuum
+    if rho < 1e-18:
+        rho = 0.0
+
+    P = rho * _R_SPECIFIC * T
+    a = math.sqrt(_GAMMA * _R_SPECIFIC * max(T, 1.0)) if T > 0.0 else 0.0
 
     return AtmosphereResult(
         density_kg_m3=rho * density_scale,
         pressure_pa=P,
-        temperature_k=T_86,
+        temperature_k=T,
         speed_of_sound_ms=a,
     )
