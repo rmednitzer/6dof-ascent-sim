@@ -3,6 +3,7 @@
 [![CI](https://github.com/rmednitzer/6dof-ascent-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/rmednitzer/6dof-ascent-sim/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch vehicle from ignition through LEO insertion.
 
@@ -49,10 +50,18 @@ python -m sim.main --no-slosh      # Disable propellant slosh model
 
 All simulation parameters are in `sim/config.py` — single source of truth for orbital targets, vehicle specs, environment models, GNC gains, safety limits, and Monte Carlo settings.
 
+## Development
+
+```bash
+pip install -e ".[dev]"        # Install with dev dependencies
+pre-commit install              # Set up pre-commit hooks
+```
+
 ## Tests
 
 ```bash
-pytest tests/ -v
+pytest tests/ -v                           # Run tests
+pytest tests/ -v --cov=sim --cov-report=term-missing  # With coverage
 ```
 
 ## Project Structure
@@ -107,6 +116,10 @@ sim/
 - [Assumptions](docs/assumptions.md) — Modeling assumptions and simplifications
 - [STPA Analysis](docs/stpa-analysis.md) — Safety analysis
 - [Runbook](docs/runbook.md) — Operating procedures
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards.
 
 ## License
 

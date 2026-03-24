@@ -13,4 +13,10 @@ env/
 *.so
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 output/
+coverage.xml
+htmlcov/
+.coverage
+.coverage.*
+*.prof
