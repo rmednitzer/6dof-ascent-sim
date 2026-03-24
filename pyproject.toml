@@ -8,20 +8,43 @@ version = "0.1.0"
 description = "6-DOF launch vehicle ascent simulation with boundary enforcement and EKF navigation"
 license = "MIT"
 requires-python = ">=3.11"
+readme = "README.md"
+keywords = ["simulation", "6dof", "launch-vehicle", "aerospace", "gnc", "orbital-mechanics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "matplotlib>=3.7",
 ]
 
+[project.urls]
+Homepage = "https://github.com/rmednitzer/6dof-ascent-sim"
+Repository = "https://github.com/rmednitzer/6dof-ascent-sim"
+Issues = "https://github.com/rmednitzer/6dof-ascent-sim/issues"
+
+[project.scripts]
+6dof-sim = "sim.main:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",
     "ruff>=0.4",
+    "pre-commit>=3.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--strict-markers"
 
 [tool.ruff]
 target-version = "py311"
