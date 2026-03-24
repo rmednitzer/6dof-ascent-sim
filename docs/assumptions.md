@@ -6,8 +6,7 @@
 > (V&V) against higher-fidelity models and flight test data. The simplifications
 > documented below introduce modelling errors that may not bound worst-case
 > flight conditions. Any use of this simulation in a regulatory or certification
-> context must be independently assessed. See `docs/eu-legal-validation.md` for
-> the EU regulatory applicability analysis.
+> context must be independently assessed.
 
 ## Earth Model
 

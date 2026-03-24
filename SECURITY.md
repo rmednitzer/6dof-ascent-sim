@@ -30,14 +30,5 @@ Security concerns relevant to this project include:
   (mitigated by guards in `sim/core/integrator.py`).
 - **Dependency vulnerabilities**: Third-party packages (NumPy, SciPy) may
   contain vulnerabilities. Run `pip audit` periodically.
-- **Export control awareness**: See `docs/eu-legal-validation.md`, Section 5
-  for dual-use regulation analysis. Do not add classified or export-controlled
+- **Export control awareness**: Do not add classified or export-controlled
   parameters to this repository.
-
-## Regulatory Context
-
-This project has been assessed against EU regulations including the Cyber
-Resilience Act (EU) 2024/2847 and NIS2 Directive (EU) 2022/2555. As
-non-commercial open-source software under MIT license, it is currently exempt
-from CRA obligations (Recital 18). See `docs/eu-legal-validation.md` for the
-full analysis.
