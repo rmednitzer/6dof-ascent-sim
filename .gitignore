@@ -15,6 +15,7 @@ env/
 .mypy_cache/
 .ruff_cache/
 output/
+examples/output/
 coverage.xml
 htmlcov/
 .coverage
