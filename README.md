@@ -40,6 +40,23 @@ python -m sim.main --no-flex       # Disable flex body model
 python -m sim.main --no-slosh      # Disable propellant slosh model
 ```
 
+## Example: Run with Visualization
+
+The `examples/` directory contains a standalone script that runs a nominal ascent and generates a visualization dashboard, ground track plot, and text summary:
+
+```bash
+python examples/run_and_visualize.py
+python examples/run_and_visualize.py --no-flex --no-slosh
+```
+
+This produces three files in `examples/output/`:
+
+| File | Description |
+|---|---|
+| `dashboard.png` | 8-panel mission dashboard (altitude, velocity, dynamic pressure, G-load, mass, throttle, EKF uncertainty, Mach) |
+| `ground_track.png` | Latitude/longitude trajectory colored by altitude |
+| `mission_summary.txt` | Plain-text report with key metrics and safety margins |
+
 ## Output
 
 - `output/telemetry.json` — Complete telemetry timeline
@@ -108,6 +125,8 @@ sim/
 │   └── statistics.py      # Result analysis + plots
 └── analysis/
     └── postflight.py      # Post-flight trajectory plots
+examples/
+└── run_and_visualize.py   # Example run with dashboard visualization
 ```
 
 ## Documentation
