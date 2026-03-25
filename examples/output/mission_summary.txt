@@ -1,0 +1,26 @@
+6-DOF Ascent Simulation — Mission Summary
+==================================================
+Outcome:               SUCCESS
+Flight time:           487.4 s
+Final altitude:        397.7 km
+Final velocity:        7056.6 m/s
+Final mass:            26591 kg
+Final stage:           2
+
+Peak Values
+--------------------------------------------------
+Peak altitude:         397.7 km
+Peak velocity:         7056.6 m/s
+Peak dynamic pressure: 31701 Pa (90.6% of limit)
+Peak axial G:          5.40 g (90.0% of limit)
+Peak lateral G:        0.255 g
+Peak Mach:             11.0
+
+Safety
+--------------------------------------------------
+Boundary violations:   16593721
+FTS triggered:         False
+Health status:         NOMINAL
+
+Telemetry frames:      48743 (internal), 4874 (downlink)
+Telemetry hash:        89470c8b9cab42336325d0c4eeef9b4bdc6367c49d41c982695edbfd4d5a95e4

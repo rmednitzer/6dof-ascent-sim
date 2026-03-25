@@ -14,8 +14,8 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-output/
-examples/output/
+/output/
+!examples/output/
 coverage.xml
 htmlcov/
 .coverage
