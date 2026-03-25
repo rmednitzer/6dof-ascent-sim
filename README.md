@@ -57,6 +57,16 @@ This produces three files in `examples/output/`:
 | `ground_track.png` | Latitude/longitude trajectory colored by altitude |
 | `mission_summary.txt` | Plain-text report with key metrics and safety margins |
 
+### Sample Output
+
+**Mission Dashboard:**
+
+![Mission Dashboard](examples/output/dashboard.png)
+
+**Ground Track:**
+
+![Ground Track](examples/output/ground_track.png)
+
 ## Output
 
 - `output/telemetry.json` — Complete telemetry timeline
