@@ -219,7 +219,6 @@ class TelemetryRecorder:
         peak_axial = 0.0
         peak_lateral = 0.0
         peak_mach = 0.0
-        total_violations = 0
 
         for frame in self.internal_frames:
             if frame.altitude_m > peak_alt:
@@ -234,7 +233,10 @@ class TelemetryRecorder:
                 peak_lateral = abs(frame.lateral_g)
             if frame.mach_number > peak_mach:
                 peak_mach = frame.mach_number
-            total_violations += frame.boundary_violations
+
+        # Use the enforcer's cumulative count directly rather than summing
+        # per-frame values (which are themselves cumulative snapshots).
+        total_violations = getattr(boundary_enforcer, "violation_count", 0)
 
         return MissionSummary(
             outcome=outcome,

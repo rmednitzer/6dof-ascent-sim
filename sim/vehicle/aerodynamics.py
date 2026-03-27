@@ -133,6 +133,11 @@ class AerodynamicsModel:
         self._max_q: float = 0.0
         self._current_q: float = 0.0
 
+    def reset(self) -> None:
+        """Reset tracking state for a new simulation run."""
+        self._max_q = 0.0
+        self._current_q = 0.0
+
     # -- Public interface ----------------------------------------------------
 
     def compute_drag(
