@@ -8,6 +8,9 @@ import numpy as np
 
 from sim import config
 
+#: Convergence tolerance for Bowring's iterative latitude solution (rad).
+_LAT_CONVERGENCE_TOL: float = 1e-12
+
 
 def eci_to_ecef(pos_eci: np.ndarray, time_s: float) -> np.ndarray:
     """Rotate ECI position to ECEF using Earth rotation angle.
@@ -73,12 +76,16 @@ def ecef_to_lla(pos_ecef: np.ndarray) -> tuple[float, float, float]:
     lon = math.atan2(y, x)
     p = math.sqrt(x**2 + y**2)
 
-    # Iterative solution (Bowring's method)
+    # Iterative solution (Bowring's method) with early termination
     lat = math.atan2(z, p * (1.0 - e2))
     for _ in range(10):
         sin_lat = math.sin(lat)
         N = a / math.sqrt(1.0 - e2 * sin_lat**2)
-        lat = math.atan2(z + e2 * N * sin_lat, p)
+        lat_new = math.atan2(z + e2 * N * sin_lat, p)
+        if abs(lat_new - lat) < _LAT_CONVERGENCE_TOL:
+            lat = lat_new
+            break
+        lat = lat_new
 
     sin_lat = math.sin(lat)
     cos_lat = math.cos(lat)

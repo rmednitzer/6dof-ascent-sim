@@ -163,6 +163,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
 
     staging = StagingSequencer(vehicle, s1_engine, s2_engine)
     aero = AerodynamicsModel()
+    aero.reset()
     guidance = GuidanceLaw()
     sensors = SensorSuite(rng=rng)
     ekf = NavigationEKF(true_state)
@@ -239,13 +240,11 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         grav_eci = gravitational_acceleration(true_state.position_eci)
         wind_eci = wind_velocity_eci(true_state.position_eci, t, rng=rng)
 
-        # --- Aerodynamics (dynamic pressure tracking) ---
+        # --- Aerodynamics (wind-relative velocity and Mach) ---
         vel_rel = true_state.velocity_eci - wind_eci
         vel_rel_mag = float(np.linalg.norm(vel_rel))
         mach = vel_rel_mag / max(speed_of_sound, 1.0)
-        # Compute drag only for q tracking (full aero forces computed later)
-        _ = aero.compute_drag(vel_rel, rho, speed_of_sound)
-        q_pa = aero.current_q
+        q_pa = 0.5 * rho * vel_rel_mag * vel_rel_mag
         peak_q = max(peak_q, q_pa)
 
         # --- Guidance ---
@@ -308,9 +307,9 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
 
         # --- Compute accelerations for structural check ---
         axial_g = thrust_n / max(true_state.mass_kg, 1.0) / config.G0
-        tvc_lateral_force = thrust_n * (
-            abs(math.sin(math.radians(approved_tvc_pitch))) + abs(math.sin(math.radians(approved_tvc_yaw)))
-        )
+        sin_tvc_pitch = math.sin(math.radians(approved_tvc_pitch))
+        sin_tvc_yaw = math.sin(math.radians(approved_tvc_yaw))
+        tvc_lateral_force = thrust_n * (abs(sin_tvc_pitch) + abs(sin_tvc_yaw))
         lateral_g = tvc_lateral_force / max(true_state.mass_kg, 1.0) / config.G0
         peak_axial_g = max(peak_axial_g, axial_g)
 
@@ -381,7 +380,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         # --- Flex body ---
         if flex_body is not None:
             # TVC lateral force for flex excitation
-            tvc_force = thrust_n * math.sin(math.radians(approved_tvc_pitch))
+            tvc_force = thrust_n * sin_tvc_pitch
             flex_body.update(dt, tvc_force, vehicle.propellant_fraction())
 
         # --- Slosh ---
@@ -419,11 +418,13 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         # Thrust vector in body frame with TVC deflection
         pitch_rad = math.radians(approved_tvc_pitch)
         yaw_rad = math.radians(approved_tvc_yaw)
+        cos_pitch_rad = math.cos(pitch_rad)
+        cos_yaw_rad = math.cos(yaw_rad)
         thrust_body = np.array(
             [
-                thrust_n * math.cos(pitch_rad) * math.cos(yaw_rad),
-                thrust_n * math.sin(yaw_rad),
-                thrust_n * math.sin(pitch_rad),
+                thrust_n * cos_pitch_rad * cos_yaw_rad,
+                thrust_n * sin_tvc_yaw,
+                thrust_n * sin_tvc_pitch,
             ]
         )
         thrust_eci = body_to_eci(thrust_body, true_state.quaternion)
@@ -437,8 +438,8 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         tvc_torque = np.array(
             [
                 0.0,
-                moment_arm * thrust_n * math.sin(pitch_rad),
-                -moment_arm * thrust_n * math.sin(yaw_rad),
+                moment_arm * thrust_n * sin_tvc_pitch,
+                -moment_arm * thrust_n * sin_tvc_yaw,
             ]
         )
         # Total torque: TVC + slosh + aerodynamic moments (normal force + pitch damping)

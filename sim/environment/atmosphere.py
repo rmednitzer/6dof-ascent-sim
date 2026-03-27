@@ -216,6 +216,21 @@ def _evaluate_standard_layers(altitude_m: float) -> tuple[float, float]:
     return T, P
 
 
+# Piecewise-exponential layers for the thermosphere (86 km -- 1000 km).
+# Each tuple: (base_alt_m, base_density_kg_m3, scale_height_m, temperature_K)
+# Densities and scale heights fitted to NRLMSISE-00 moderate solar activity.
+_THERMO_LAYERS: list[tuple[float, float, float, float]] = [
+    (86_000.0, 6.958e-6, 5_900.0, 186.9),  # Mesopause → lower thermosphere
+    (100_000.0, 5.604e-7, 6_400.0, 195.1),  # Kármán line region
+    (115_000.0, 4.289e-8, 7_800.0, 304.0),  # Lower thermosphere
+    (150_000.0, 2.076e-9, 22_800.0, 634.0),  # Mid-thermosphere (rapid T rise)
+    (200_000.0, 2.541e-10, 37_500.0, 855.0),  # Upper thermosphere
+    (300_000.0, 1.916e-11, 53_600.0, 976.0),  # Near-exobase
+    (500_000.0, 5.215e-13, 75_800.0, 999.0),  # Exosphere transition
+    (750_000.0, 3.561e-15, 100_000.0, 1000.0),  # Upper exosphere
+]
+
+
 def _high_altitude(altitude_m: float, density_scale: float) -> AtmosphereResult:
     """Multi-layer exponential atmosphere from 86 km to 1000 km.
 
@@ -234,20 +249,6 @@ def _high_altitude(altitude_m: float, density_scale: float) -> AtmosphereResult:
         Jacchia, "New static models of the thermosphere and exosphere
         with empirical temperature profiles", SAO Special Report 313, 1970.
     """
-    # Piecewise-exponential layers for the thermosphere.
-    # Each tuple: (base_alt_m, base_density_kg_m3, scale_height_m, temperature_K)
-    # Densities and scale heights fitted to NRLMSISE-00 moderate solar activity.
-    _THERMO_LAYERS: list[tuple[float, float, float, float]] = [
-        (86_000.0, 6.958e-6, 5_900.0, 186.9),  # Mesopause → lower thermosphere
-        (100_000.0, 5.604e-7, 6_400.0, 195.1),  # Kármán line region
-        (115_000.0, 4.289e-8, 7_800.0, 304.0),  # Lower thermosphere
-        (150_000.0, 2.076e-9, 22_800.0, 634.0),  # Mid-thermosphere (rapid T rise)
-        (200_000.0, 2.541e-10, 37_500.0, 855.0),  # Upper thermosphere
-        (300_000.0, 1.916e-11, 53_600.0, 976.0),  # Near-exobase
-        (500_000.0, 5.215e-13, 75_800.0, 999.0),  # Exosphere transition
-        (750_000.0, 3.561e-15, 100_000.0, 1000.0),  # Upper exosphere
-    ]
-
     # Find the correct layer
     layer = _THERMO_LAYERS[0]
     for L in _THERMO_LAYERS:
