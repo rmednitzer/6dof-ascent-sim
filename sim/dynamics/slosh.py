@@ -134,7 +134,9 @@ class SloshModel:
 
         # Pendulum EOM:
         #   θ̈ + 2ζωθ̇ + ω²θ = a_lat / L
-        theta_ddot = -2.0 * self._zeta * omega * self._theta_dot - omega * omega * self._theta + lateral_accel_mps2 / arm
+        theta_ddot = (
+            -2.0 * self._zeta * omega * self._theta_dot - omega * omega * self._theta + lateral_accel_mps2 / arm
+        )
 
         # Semi-implicit Euler integration.
         self._theta_dot += theta_ddot * dt
