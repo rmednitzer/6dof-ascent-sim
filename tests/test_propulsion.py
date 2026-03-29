@@ -69,6 +69,18 @@ def test_isp_mid_altitude(test_stage: StageConfig) -> None:
     assert isp == pytest.approx(expected)
 
 
+def test_isp_clamped_high_pressure(test_stage: StageConfig) -> None:
+    """Pressure above sea-level should be clamped, returning isp_sl."""
+    isp = isp_at_pressure(test_stage, P_SL * 1.5)
+    assert isp == pytest.approx(test_stage.isp_sl)
+
+
+def test_isp_clamped_negative_pressure(test_stage: StageConfig) -> None:
+    """Negative pressure should be clamped to zero, returning isp_vac."""
+    isp = isp_at_pressure(test_stage, -1000.0)
+    assert isp == pytest.approx(test_stage.isp_vac)
+
+
 def test_mass_flow_normal() -> None:
     """Test mass flow calculation under normal conditions."""
     thrust = 100000.0
