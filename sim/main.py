@@ -235,7 +235,6 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         atmo = atmosphere(alt_m)
         rho = atmo.density_kg_m3
         pressure = atmo.pressure_pa
-        _temperature = atmo.temperature_k  # noqa: F841
         speed_of_sound = atmo.speed_of_sound_ms
         grav_eci = gravitational_acceleration(true_state.position_eci)
         wind_eci = wind_velocity_eci(true_state.position_eci, t, rng=rng)
