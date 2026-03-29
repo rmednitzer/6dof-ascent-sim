@@ -1,6 +1,7 @@
 """Tests for propulsion functions in sim.vehicle.propulsion."""
 
 import pytest
+
 from sim.vehicle.propulsion import G0, P_SL, isp_at_pressure, mass_flow_rate, thrust_at_pressure
 from sim.vehicle.vehicle import StageConfig
 
