@@ -1,7 +1,8 @@
 import timeit
-import numpy as np
+
 from sim.dynamics.flex_body import FlexBody
 from sim.dynamics.slosh import SloshModel
+
 
 def benchmark_flex_body():
     fb = FlexBody()
@@ -21,9 +22,10 @@ def benchmark_flex_body():
     t_upd = timeit.timeit(test_update, number=n)
 
     print(f"FlexBody (n={n}):")
-    print(f"  modal_velocities:    {t_vel:.4f}s ({t_vel/n*1e6:.2f} µs/call)")
-    print(f"  modal_displacements: {t_disp:.4f}s ({t_disp/n*1e6:.2f} µs/call)")
-    print(f"  update:              {t_upd:.4f}s ({t_upd/n*1e6:.2f} µs/call)")
+    print(f"  modal_velocities:    {t_vel:.4f}s ({t_vel / n * 1e6:.2f} µs/call)")
+    print(f"  modal_displacements: {t_disp:.4f}s ({t_disp / n * 1e6:.2f} µs/call)")
+    print(f"  update:              {t_upd:.4f}s ({t_upd / n * 1e6:.2f} µs/call)")
+
 
 def benchmark_slosh():
     sm = SloshModel(n_tanks=2)
@@ -43,9 +45,10 @@ def benchmark_slosh():
     t_upd = timeit.timeit(test_update, number=n)
 
     print(f"SloshModel (n={n}):")
-    print(f"  pendulum_angles: {t_ang:.4f}s ({t_ang/n*1e6:.2f} µs/call)")
-    print(f"  pendulum_rates:  {t_rate:.4f}s ({t_rate/n*1e6:.2f} µs/call)")
-    print(f"  update:          {t_upd:.4f}s ({t_upd/n*1e6:.2f} µs/call)")
+    print(f"  pendulum_angles: {t_ang:.4f}s ({t_ang / n * 1e6:.2f} µs/call)")
+    print(f"  pendulum_rates:  {t_rate:.4f}s ({t_rate / n * 1e6:.2f} µs/call)")
+    print(f"  update:          {t_upd:.4f}s ({t_upd / n * 1e6:.2f} µs/call)")
+
 
 if __name__ == "__main__":
     benchmark_flex_body()
