@@ -18,28 +18,9 @@ vehicle CG that result from pendulum motion.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from sim import config
-
-
-@dataclass
-class SloshTankState:
-    """Dynamic state of a single pendulum-analogy slosh mass.
-
-    Attributes
-    ----------
-    theta : float
-        Pendulum angle from vertical (rad).  Positive = displacement in
-        the lateral direction corresponding to the modelled plane.
-    theta_dot : float
-        Pendulum angular rate (rad/s).
-    """
-
-    theta: float = 0.0
-    theta_dot: float = 0.0
 
 
 class SloshModel:
@@ -82,8 +63,9 @@ class SloshModel:
         self._zeta: float = float(config.SLOSH_DAMPING_RATIO)
         self._arm_m: float = float(config.SLOSH_ARM_LENGTH_M)
 
-        # Per-tank pendulum state.
-        self.tanks: list[SloshTankState] = [SloshTankState() for _ in range(n_tanks)]
+        # Per-tank pendulum state (vectorised).
+        self._theta: np.ndarray = np.zeros(n_tanks, dtype=float)
+        self._theta_dot: np.ndarray = np.zeros(n_tanks, dtype=float)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -110,9 +92,8 @@ class SloshModel:
 
     def reset(self) -> None:
         """Zero all pendulum states."""
-        for t in self.tanks:
-            t.theta = 0.0
-            t.theta_dot = 0.0
+        self._theta.fill(0.0)
+        self._theta_dot.fill(0.0)
 
     def update(
         self,
@@ -151,29 +132,18 @@ class SloshModel:
         m_slosh = self._slosh_mass(propellant_mass_kg)
         arm = self._arm_m  # could be fill-dependent in a future extension
 
-        forces = np.empty(self._n, dtype=float)
-        torques = np.empty(self._n, dtype=float)
+        # Pendulum EOM:
+        #   θ̈ + 2ζωθ̇ + ω²θ = a_lat / L
+        theta_ddot = -2.0 * self._zeta * omega * self._theta_dot - omega * omega * self._theta + lateral_accel_mps2 / arm
 
-        for i, tank in enumerate(self.tanks):
-            # Pendulum EOM:
-            #   θ̈ + 2ζωθ̇ + ω²θ = a_lat / L
-            theta_ddot = (
-                -2.0 * self._zeta * omega * tank.theta_dot - omega * omega * tank.theta + lateral_accel_mps2 / arm
-            )
+        # Semi-implicit Euler integration.
+        self._theta_dot += theta_ddot * dt
+        self._theta += self._theta_dot * dt
 
-            # Semi-implicit Euler integration.
-            tank.theta_dot += theta_ddot * dt
-            tank.theta += tank.theta_dot * dt
-
-            # Force exerted by the slosh mass on the vehicle.
-            # The restoring spring pulls the vehicle toward the slosh mass:
-            #   F = -m_slosh * L * θ̈  (reaction on vehicle, lateral)
-            # Equivalently, from the EOM rearranged:
-            #   F = m_slosh * (ω²*L*θ + 2ζωL*θ̇ )
-            # which avoids recomputing θ̈ after integration.
-            f = m_slosh * arm * (omega * omega * tank.theta + 2.0 * self._zeta * omega * tank.theta_dot)
-            forces[i] = f
-            torques[i] = f * self._tank_offsets[i]
+        # Force exerted by the slosh mass on the vehicle.
+        #   F = m_slosh * (ω²*L*θ + 2ζωL*θ̇ )
+        forces = m_slosh * arm * (omega * omega * self._theta + 2.0 * self._zeta * omega * self._theta_dot)
+        torques = forces * self._tank_offsets
 
         return forces, torques
 
@@ -195,17 +165,17 @@ class SloshModel:
 
     def pendulum_angles(self) -> np.ndarray:
         """Current pendulum angles for all tanks (rad)."""
-        return np.array([t.theta for t in self.tanks], dtype=float)
+        return self._theta.copy()
 
     def pendulum_rates(self) -> np.ndarray:
         """Current pendulum angular rates for all tanks (rad/s)."""
-        return np.array([t.theta_dot for t in self.tanks], dtype=float)
+        return self._theta_dot.copy()
 
     def kinetic_energy(self, propellant_mass_kg: float) -> float:
         """Total slosh kinetic energy across all tanks (J)."""
         m = self._slosh_mass(propellant_mass_kg)
         arm = self._arm_m
-        return 0.5 * m * arm**2 * float(np.sum(self.pendulum_rates() ** 2))
+        return 0.5 * m * arm**2 * float(np.sum(self._theta_dot**2))
 
     def potential_energy(
         self,
@@ -216,4 +186,4 @@ class SloshModel:
         m = self._slosh_mass(propellant_mass_kg)
         arm = self._arm_m
         omega = self._omega(propellant_fraction)
-        return 0.5 * m * arm**2 * omega**2 * float(np.sum(self.pendulum_angles() ** 2))
+        return 0.5 * m * arm**2 * omega**2 * float(np.sum(self._theta**2))

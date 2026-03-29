@@ -14,19 +14,9 @@ angular-rate contribution that corrupts the gyro measurement.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from sim import config
-
-
-@dataclass
-class _ModalState:
-    """Internal state for a single bending mode."""
-
-    q: float = 0.0  # Generalised displacement (rad)
-    q_dot: float = 0.0  # Generalised velocity (rad/s)
 
 
 class FlexBody:
@@ -40,8 +30,8 @@ class FlexBody:
 
     Attributes
     ----------
-    modes : list[_ModalState]
-        Per-mode generalised coordinate and rate.
+    n_modes : int
+        Number of active bending modes.
     """
 
     def __init__(self, n_modes: int | None = None) -> None:
@@ -56,8 +46,9 @@ class FlexBody:
         self._slope_imu: np.ndarray = np.array(config.FLEX_MODE_SLOPES_AT_IMU[: self._n], dtype=float)
         self._slope_engine: np.ndarray = np.array(config.FLEX_MODE_SLOPES_AT_ENGINE[: self._n], dtype=float)
 
-        # Per-mode state.
-        self.modes: list[_ModalState] = [_ModalState() for _ in range(self._n)]
+        # Per-mode state (vectorised).
+        self._q: np.ndarray = np.zeros(self._n, dtype=float)
+        self._q_dot: np.ndarray = np.zeros(self._n, dtype=float)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -86,9 +77,8 @@ class FlexBody:
 
     def reset(self) -> None:
         """Zero all modal states."""
-        for m in self.modes:
-            m.q = 0.0
-            m.q_dot = 0.0
+        self._q.fill(0.0)
+        self._q_dot.fill(0.0)
 
     def update(
         self,
@@ -122,52 +112,40 @@ class FlexBody:
         """
         omega = self._omega(propellant_fraction)  # (n,)
 
-        bending_rate_at_imu = np.empty(self._n, dtype=float)
+        # Generalised force: TVC projected onto mode shape at engine.
+        f_over_m = (tvc_force_n * self._slope_engine) / modal_mass_kg
 
-        for i, mode in enumerate(self.modes):
-            # Generalised force: TVC projected onto mode shape at engine.
-            f_modal = tvc_force_n * self._slope_engine[i]
-            f_over_m = f_modal / modal_mass_kg
+        # q̈ = -2ζωq̇ - ω²q + F/m
+        q_ddot = -2.0 * self._zeta * omega * self._q_dot - (omega**2) * self._q + f_over_m
 
-            w = omega[i]
-            z = self._zeta[i]
+        # Semi-implicit Euler (symplectic — conserves energy better
+        # than explicit Euler for oscillators).
+        self._q_dot += q_ddot * dt
+        self._q += self._q_dot * dt
 
-            # q̈ = -2ζωq̇ - ω²q + F/m
-            q_ddot = -2.0 * z * w * mode.q_dot - w * w * mode.q + f_over_m
-
-            # Semi-implicit Euler (symplectic — conserves energy better
-            # than explicit Euler for oscillators).
-            mode.q_dot += q_ddot * dt
-            mode.q += mode.q_dot * dt
-
-            # Bending angular rate sensed at IMU = q̇_i * (mode slope at IMU).
-            bending_rate_at_imu[i] = mode.q_dot * self._slope_imu[i]
-
-        return bending_rate_at_imu
+        # Bending angular rate sensed at IMU = q̇_i * (mode slope at IMU).
+        return self._q_dot * self._slope_imu
 
     def total_bending_rate_at_imu(self) -> float:
         """Return the summed bending angular rate at the IMU (rad/s).
 
         Call *after* :meth:`update` within the same timestep.
         """
-        total = 0.0
-        for i, mode in enumerate(self.modes):
-            total += mode.q_dot * self._slope_imu[i]
-        return total
+        return float(np.sum(self._q_dot * self._slope_imu))
 
     def modal_displacements(self) -> np.ndarray:
         """Return current generalised displacements for all modes."""
-        return np.array([m.q for m in self.modes], dtype=float)
+        return self._q.copy()
 
     def modal_velocities(self) -> np.ndarray:
         """Return current generalised velocities for all modes."""
-        return np.array([m.q_dot for m in self.modes], dtype=float)
+        return self._q_dot.copy()
 
     def kinetic_energy(self, modal_mass_kg: float = 1.0) -> float:
         """Total modal kinetic energy across all modes (J)."""
-        return 0.5 * modal_mass_kg * float(np.sum(self.modal_velocities() ** 2))
+        return 0.5 * modal_mass_kg * float(np.sum(self._q_dot**2))
 
     def potential_energy(self, propellant_fraction: float, modal_mass_kg: float = 1.0) -> float:
         """Total modal potential energy across all modes (J)."""
         omega = self._omega(propellant_fraction)
-        return 0.5 * modal_mass_kg * float(np.sum((omega**2) * (self.modal_displacements() ** 2)))
+        return 0.5 * modal_mass_kg * float(np.sum((omega**2) * (self._q**2)))
