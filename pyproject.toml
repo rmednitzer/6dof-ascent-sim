@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=82.0.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -20,9 +20,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-    "numpy>=1.24",
-    "scipy>=1.10",
-    "matplotlib>=3.7",
+    "numpy>=2.4.4",
+    "scipy>=1.17.1",
+    "matplotlib>=3.10.8",
 ]
 
 [project.urls]
@@ -35,10 +35,10 @@ Issues = "https://github.com/rmednitzer/6dof-ascent-sim/issues"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "ruff>=0.4",
-    "pre-commit>=3.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.10",
+    "pre-commit>=4.5.1",
 ]
 
 [tool.pytest.ini_options]
