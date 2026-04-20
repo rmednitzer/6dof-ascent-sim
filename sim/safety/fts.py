@@ -7,6 +7,7 @@ a safe state (engines off / destruct).
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -158,33 +159,86 @@ class FlightTerminationSystem:
         cross-range deviation is simply the signed projection of the offset
         vector onto the normal.
         """
-        offset = np.asarray(position_ecef) - np.asarray(plane_point)
-        return float(np.dot(offset, np.asarray(plane_normal)))
+        dx = position_ecef[0] - plane_point[0]
+        dy = position_ecef[1] - plane_point[1]
+        dz = position_ecef[2] - plane_point[2]
+        return dx * plane_normal[0] + dy * plane_normal[1] + dz * plane_normal[2]
 
     @staticmethod
     def _compute_attitude_error(
         q_actual: np.ndarray,
         q_desired: np.ndarray,
     ) -> float:
-        """Angle (degrees) between two unit quaternions [w, x, y, z].
+        """Angle (degrees) between two unit quaternions [x, y, z, w].
 
         Uses the inner-product formula:
             theta = 2 * arccos(|q_actual . q_desired|)
         """
-        q_a = np.asarray(q_actual, dtype=np.float64)
-        q_d = np.asarray(q_desired, dtype=np.float64)
-        dot = np.clip(np.abs(np.dot(q_a, q_d)), 0.0, 1.0)
-        return float(np.degrees(2.0 * np.arccos(dot)))
+        dot = abs(
+            q_actual[0] * q_desired[0]
+            + q_actual[1] * q_desired[1]
+            + q_actual[2] * q_desired[2]
+            + q_actual[3] * q_desired[3]
+        )
+        if dot > 1.0:
+            dot = 1.0
+        return math.degrees(2.0 * math.acos(dot))
 
     @staticmethod
     def _compute_position_uncertainty(cov: np.ndarray) -> float:
         """Largest 1-sigma position uncertainty from a 3x3 covariance matrix.
 
-        Returns the square root of the largest eigenvalue.
+        Uses the analytic closed-form eigenvalue solution for a symmetric
+        3x3 matrix (Smith, 1961), which is roughly an order of magnitude
+        faster than ``np.linalg.eigvalsh`` for this small size and avoids the
+        per-call numpy dispatch overhead.
         """
-        cov = np.asarray(cov, dtype=np.float64)
-        eigenvalues = np.linalg.eigvalsh(cov)
-        return float(np.sqrt(np.max(np.abs(eigenvalues))))
+        a00 = cov[0, 0]
+        a11 = cov[1, 1]
+        a22 = cov[2, 2]
+        a01 = cov[0, 1]
+        a02 = cov[0, 2]
+        a12 = cov[1, 2]
+
+        # Off-diagonal check: if nearly diagonal, the eigenvalues are the
+        # diagonal entries themselves.
+        p1 = a01 * a01 + a02 * a02 + a12 * a12
+        if p1 < 1e-30:
+            max_eig = a00
+            if a11 > max_eig:
+                max_eig = a11
+            if a22 > max_eig:
+                max_eig = a22
+            if max_eig < 0.0:
+                max_eig = abs(max_eig)
+            return math.sqrt(max_eig)
+
+        q = (a00 + a11 + a22) / 3.0
+        d00 = a00 - q
+        d11 = a11 - q
+        d22 = a22 - q
+        p2 = d00 * d00 + d11 * d11 + d22 * d22 + 2.0 * p1
+        p = math.sqrt(p2 / 6.0)
+
+        # det(B) where B = (A - q*I) / p
+        inv_p = 1.0 / p
+        b00 = d00 * inv_p
+        b11 = d11 * inv_p
+        b22 = d22 * inv_p
+        b01 = a01 * inv_p
+        b02 = a02 * inv_p
+        b12 = a12 * inv_p
+        det_b = b00 * (b11 * b22 - b12 * b12) - b01 * (b01 * b22 - b12 * b02) + b02 * (b01 * b12 - b11 * b02)
+        r = det_b * 0.5
+        if r > 1.0:
+            r = 1.0
+        elif r < -1.0:
+            r = -1.0
+
+        phi = math.acos(r) / 3.0
+        # Largest eigenvalue corresponds to the principal branch.
+        max_eig = q + 2.0 * p * math.cos(phi)
+        return math.sqrt(abs(max_eig))
 
     def _trigger(
         self,

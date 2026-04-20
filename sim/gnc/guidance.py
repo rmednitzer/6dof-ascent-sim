@@ -29,6 +29,7 @@ from enum import IntEnum
 import numpy as np
 
 from sim import config
+from sim.core.fast_math import cross3, dot3, norm3
 from sim.core.reference_frames import (
     quaternion_from_axis_angle,
 )
@@ -99,7 +100,7 @@ class GuidanceLaw:
             gt_dir = self._quaternion_to_thrust_dir(gt_cmd.desired_quaternion)
             peg_dir = self._quaternion_to_thrust_dir(peg_cmd.desired_quaternion)
             blended_dir = (1.0 - blend_frac) * gt_dir + blend_frac * peg_dir
-            norm = np.linalg.norm(blended_dir)
+            norm = norm3(blended_dir)
             if norm > 1e-10:
                 blended_dir /= norm
             q_des = self._quaternion_aligning_thrust(blended_dir)
@@ -123,26 +124,29 @@ class GuidanceLaw:
         t = state.time_s
         up = self._local_up(state)
 
-        omega_earth = np.array([0.0, 0.0, config.EARTH_OMEGA])
-        vel_earth_rel = state.velocity_eci - np.cross(omega_earth, state.position_eci)
-        v_rel_mag = np.linalg.norm(vel_earth_rel)
+        # omega_earth = [0, 0, EARTH_OMEGA]; cross with position reduces to:
+        #   omega × p = [-omega*p_y, omega*p_x, 0]
+        p0, p1, _ = state.position_eci[0], state.position_eci[1], state.position_eci[2]
+        omega_z = config.EARTH_OMEGA
+        vel_earth_rel = state.velocity_eci - np.array([-omega_z * p1, omega_z * p0, 0.0])
+        v_rel_mag = norm3(vel_earth_rel)
 
         launch_dr = self._launch_downrange_eci
-        launch_dr_perp = launch_dr - np.dot(launch_dr, up) * up
-        launch_dr_mag = np.linalg.norm(launch_dr_perp)
+        launch_dr_perp = launch_dr - dot3(launch_dr, up) * up
+        launch_dr_mag = norm3(launch_dr_perp)
         if launch_dr_mag > 1e-6:
             launch_dr_perp /= launch_dr_mag
         else:
             launch_dr_perp = self._default_downrange(up)
 
         if v_rel_mag > 50.0:
-            v_perp = vel_earth_rel - np.dot(vel_earth_rel, up) * up
-            v_perp_mag = np.linalg.norm(v_perp)
+            v_perp = vel_earth_rel - dot3(vel_earth_rel, up) * up
+            v_perp_mag = norm3(v_perp)
             if v_perp_mag > 10.0:
                 vel_dr = v_perp / v_perp_mag
                 blend = min(1.0, v_perp_mag / 200.0)
                 downrange = (1.0 - blend) * launch_dr_perp + blend * vel_dr
-                downrange /= np.linalg.norm(downrange)
+                downrange /= norm3(downrange)
             else:
                 downrange = launch_dr_perp
         else:
@@ -162,8 +166,12 @@ class GuidanceLaw:
             programmed_pitch_rad = math.radians(min(programmed_pitch_deg, 89.0))
 
             if v_rel_mag > 50.0:
-                v_up = np.dot(vel_earth_rel / v_rel_mag, up)
-                vel_pitch_from_vert = math.acos(np.clip(v_up, -1.0, 1.0))
+                v_up = dot3(vel_earth_rel, up) / v_rel_mag
+                if v_up > 1.0:
+                    v_up = 1.0
+                elif v_up < -1.0:
+                    v_up = -1.0
+                vel_pitch_from_vert = math.acos(v_up)
             else:
                 vel_pitch_from_vert = math.radians(config.PITCH_KICK_DEG)
 
@@ -173,7 +181,7 @@ class GuidanceLaw:
                 pitch_from_vert = programmed_pitch_rad
 
             desired_dir = up * math.cos(pitch_from_vert) + downrange * math.sin(pitch_from_vert)
-            desired_dir /= np.linalg.norm(desired_dir)
+            desired_dir /= norm3(desired_dir)
 
         q_des = self._quaternion_aligning_thrust(desired_dir)
         return GuidanceCommand(q_des, throttle=1.0, phase=GuidancePhase.GRAVITY_TURN)
@@ -191,8 +199,8 @@ class GuidanceLaw:
         """
         pos = state.position_eci
         vel = state.velocity_eci
-        r = np.linalg.norm(pos)
-        v = np.linalg.norm(vel)
+        r = norm3(pos)
+        v = norm3(vel)
         t = state.time_s
 
         if r < 1.0 or v < 1.0:
@@ -202,16 +210,16 @@ class GuidanceLaw:
         target_r = config.EARTH_RADIUS_M + config.TARGET_ALTITUDE_M
 
         # Radial and tangential decomposition
-        v_radial = np.dot(vel, r_hat)
+        v_radial = dot3(vel, r_hat)
         v_tangent_vec = vel - v_radial * r_hat
-        v_tangent = np.linalg.norm(v_tangent_vec)
+        v_tangent = norm3(v_tangent_vec)
 
         if v_tangent > 1.0:
             t_hat = v_tangent_vec / v_tangent
         else:
-            h = np.cross(pos, vel)
-            t_hat = np.cross(h, pos)
-            t_mag = np.linalg.norm(t_hat)
+            h = cross3(pos, vel)
+            t_hat = cross3(h, pos)
+            t_mag = norm3(t_hat)
             t_hat = t_hat / t_mag if t_mag > 1e-6 else np.array([0.0, 1.0, 0.0])
 
         # Thrust acceleration magnitude
@@ -250,13 +258,21 @@ class GuidanceLaw:
         # Clamp radial fraction — most thrust should go toward orbital velocity.
         # Once above target altitude, allow stronger downward steering to shed altitude.
         if r > target_r:
-            f_r = np.clip(f_r, -0.5, 0.1)  # Above target: bias toward horizontal/down
+            # Above target: bias toward horizontal/down
+            if f_r < -0.5:
+                f_r = -0.5
+            elif f_r > 0.1:
+                f_r = 0.1
         else:
-            f_r = np.clip(f_r, -0.3, 0.4)  # Below target: allow some climb
+            # Below target: allow some climb
+            if f_r < -0.3:
+                f_r = -0.3
+            elif f_r > 0.4:
+                f_r = 0.4
         f_h = math.sqrt(max(0.0, 1.0 - f_r * f_r))
 
         desired_dir = r_hat * f_r + t_hat * f_h
-        norm = np.linalg.norm(desired_dir)
+        norm = norm3(desired_dir)
         if norm > 1e-10:
             desired_dir /= norm
 
@@ -410,12 +426,12 @@ class GuidanceLaw:
         east_ecef = np.array([-sin_lon, cos_lon, 0.0])
 
         downrange_ecef = north_ecef * cos_az + east_ecef * sin_az
-        return downrange_ecef / np.linalg.norm(downrange_ecef)
+        return downrange_ecef / norm3(downrange_ecef)
 
     @staticmethod
     def _local_up(state: VehicleState) -> np.ndarray:
         """Unit vector from Earth center through vehicle."""
-        r = np.linalg.norm(state.position_eci)
+        r = norm3(state.position_eci)
         if r < 1.0:
             return np.array([0.0, 0.0, 1.0])
         return state.position_eci / r
@@ -423,9 +439,9 @@ class GuidanceLaw:
     @staticmethod
     def _default_downrange(up: np.ndarray) -> np.ndarray:
         """Compute a default downrange direction perpendicular to up."""
-        arb = np.array([1.0, 0.0, 0.0])
-        arb = arb - np.dot(arb, up) * up
-        mag = np.linalg.norm(arb)
+        # arb = [1,0,0] - dot(arb, up) * up; dot([1,0,0], up) = up[0]
+        arb = np.array([1.0 - up[0] * up[0], -up[0] * up[1], -up[0] * up[2]])
+        mag = norm3(arb)
         if mag > 1e-6:
             return arb / mag
         return np.array([0.0, 1.0, 0.0])
@@ -433,14 +449,23 @@ class GuidanceLaw:
     @staticmethod
     def _quaternion_aligning_thrust(desired_dir_eci: np.ndarray) -> np.ndarray:
         """Compute quaternion that rotates body +X to desired_dir_eci."""
-        body_x = np.array([1.0, 0.0, 0.0])
-        d = desired_dir_eci / max(np.linalg.norm(desired_dir_eci), 1e-10)
-        dot = np.dot(body_x, d)
-        if dot > 0.99999:
+        # body_x = [1,0,0], so dot(body_x, d) = d[0] and body_x × d = [0, -d[2], d[1]].
+        d_mag = norm3(desired_dir_eci)
+        inv = 1.0 / d_mag if d_mag > 1e-10 else 1e10
+        d0 = desired_dir_eci[0] * inv
+        d1 = desired_dir_eci[1] * inv
+        d2 = desired_dir_eci[2] * inv
+        if d0 > 0.99999:
             return np.array([0.0, 0.0, 0.0, 1.0])
-        if dot < -0.99999:
+        if d0 < -0.99999:
             return np.array([0.0, 0.0, 1.0, 0.0])
-        axis = np.cross(body_x, d)
-        axis /= np.linalg.norm(axis)
-        angle = math.acos(np.clip(dot, -1.0, 1.0))
+        ax1 = -d2
+        ax2 = d1
+        axis_mag = math.sqrt(ax1 * ax1 + ax2 * ax2)
+        axis = np.array([0.0, ax1 / axis_mag, ax2 / axis_mag])
+        if d0 > 1.0:
+            d0 = 1.0
+        elif d0 < -1.0:
+            d0 = -1.0
+        angle = math.acos(d0)
         return quaternion_from_axis_angle(axis, angle)

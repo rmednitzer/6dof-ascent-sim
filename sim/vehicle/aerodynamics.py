@@ -20,28 +20,34 @@ import math
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.interpolate import interp1d
+from scipy.interpolate import CubicSpline
 
 from sim import config
+from sim.core.fast_math import norm3
 
 # ---------------------------------------------------------------------------
-# Pre-build interpolators (cubic spline, clamped outside table range)
+# Pre-build cubic splines (clamped outside table range).
+# ``CubicSpline.__call__`` is significantly faster than ``interp1d(kind="cubic")``
+# because it operates directly on pre-computed piecewise polynomial
+# coefficients without allocating intermediate arrays on every call.
 # ---------------------------------------------------------------------------
-_cd_interp: interp1d = interp1d(
-    config.CD_TABLE_MACH,
-    config.CD_TABLE_VALUE,
-    kind="cubic",
-    bounds_error=False,
-    fill_value=(config.CD_TABLE_VALUE[0], config.CD_TABLE_VALUE[-1]),
-)
+_CD_TABLE_MACH = np.asarray(config.CD_TABLE_MACH, dtype=float)
+_CD_TABLE_VALUE = np.asarray(config.CD_TABLE_VALUE, dtype=float)
+_CN_ALPHA_TABLE_MACH = np.asarray(config.CN_ALPHA_TABLE_MACH, dtype=float)
+_CN_ALPHA_TABLE_VALUE = np.asarray(config.CN_ALPHA_TABLE_VALUE, dtype=float)
 
-_cn_alpha_interp: interp1d = interp1d(
-    config.CN_ALPHA_TABLE_MACH,
-    config.CN_ALPHA_TABLE_VALUE,
-    kind="cubic",
-    bounds_error=False,
-    fill_value=(config.CN_ALPHA_TABLE_VALUE[0], config.CN_ALPHA_TABLE_VALUE[-1]),
-)
+_cd_spline = CubicSpline(_CD_TABLE_MACH, _CD_TABLE_VALUE, bc_type="not-a-knot", extrapolate=False)
+_cn_alpha_spline = CubicSpline(_CN_ALPHA_TABLE_MACH, _CN_ALPHA_TABLE_VALUE, bc_type="not-a-knot", extrapolate=False)
+
+_CD_MACH_LO: float = float(_CD_TABLE_MACH[0])
+_CD_MACH_HI: float = float(_CD_TABLE_MACH[-1])
+_CD_VAL_LO: float = float(_CD_TABLE_VALUE[0])
+_CD_VAL_HI: float = float(_CD_TABLE_VALUE[-1])
+
+_CN_MACH_LO: float = float(_CN_ALPHA_TABLE_MACH[0])
+_CN_MACH_HI: float = float(_CN_ALPHA_TABLE_MACH[-1])
+_CN_VAL_LO: float = float(_CN_ALPHA_TABLE_VALUE[0])
+_CN_VAL_HI: float = float(_CN_ALPHA_TABLE_VALUE[-1])
 
 
 # ---------------------------------------------------------------------------
@@ -57,14 +63,27 @@ def mach_number(v: float, speed_of_sound: float) -> float:
 
 
 def drag_coefficient(mach: float) -> float:
-    """Interpolate Cd from the config table, applying the scale factor."""
-    cd_base: float = float(_cd_interp(mach))
+    """Interpolate Cd from the config table, applying the scale factor.
+
+    The cubic spline is clamped to the table endpoints for out-of-range
+    inputs, matching the behaviour of the original ``interp1d`` wrapper.
+    """
+    if mach <= _CD_MACH_LO:
+        cd_base = _CD_VAL_LO
+    elif mach >= _CD_MACH_HI:
+        cd_base = _CD_VAL_HI
+    else:
+        cd_base = float(_cd_spline(mach))
     return cd_base * config.CD_SCALE_FACTOR
 
 
 def normal_force_coefficient_slope(mach: float) -> float:
     """Interpolate CN_alpha (per radian) from the config table."""
-    return float(_cn_alpha_interp(mach))
+    if mach <= _CN_MACH_LO:
+        return _CN_VAL_LO
+    if mach >= _CN_MACH_HI:
+        return _CN_VAL_HI
+    return float(_cn_alpha_spline(mach))
 
 
 def dynamic_pressure(rho: float, v: float) -> float:
@@ -162,7 +181,7 @@ class AerodynamicsModel:
         ndarray, shape (3,)
             Drag force vector (N), opposing *velocity_body*.
         """
-        v_mag: float = float(np.linalg.norm(velocity_body))
+        v_mag: float = norm3(velocity_body)
         if v_mag < 1.0e-6:
             return np.zeros(3)
 
@@ -216,7 +235,7 @@ class AerodynamicsModel:
         """
         from sim.core.reference_frames import eci_to_body
 
-        v_mag: float = float(np.linalg.norm(vel_rel_eci))
+        v_mag: float = norm3(vel_rel_eci)
         if v_mag < 1.0e-6 or rho < 1.0e-15:
             return AeroForces(
                 drag_force_eci=np.zeros(3),
@@ -239,7 +258,7 @@ class AerodynamicsModel:
 
         # --- Transform velocity to body frame for AoA computation ---
         vel_body = eci_to_body(vel_rel_eci, quaternion)
-        vb_mag = float(np.linalg.norm(vel_body))
+        vb_mag = norm3(vel_body)
         if vb_mag < 1.0e-6:
             return AeroForces(
                 drag_force_eci=f_drag_eci,
@@ -250,21 +269,25 @@ class AerodynamicsModel:
 
         # Angle of attack: angle between body +X axis and velocity in body frame
         # Body X is the vehicle's longitudinal axis (thrust direction)
-        cos_alpha = np.clip(vel_body[0] / vb_mag, -1.0, 1.0)
+        cos_alpha = vel_body[0] / vb_mag
+        if cos_alpha > 1.0:
+            cos_alpha = 1.0
+        elif cos_alpha < -1.0:
+            cos_alpha = -1.0
         alpha = math.acos(abs(cos_alpha))
 
         # Normal force direction: component of velocity perpendicular to body X
         # in the body frame
-        vel_perp = vel_body.copy()
-        vel_perp[0] = 0.0  # Remove axial component
-        vel_perp_mag = float(np.linalg.norm(vel_perp))
+        vp1, vp2 = vel_body[1], vel_body[2]
+        vel_perp_mag = math.sqrt(vp1 * vp1 + vp2 * vp2)
 
         normal_force_body = np.zeros(3)
         aero_moment_body = np.zeros(3)
 
         if vel_perp_mag > 1.0e-6 and alpha > 1.0e-6:
             # Normal force direction opposes the lateral velocity component
-            n_hat = -vel_perp / vel_perp_mag
+            inv_mag = 1.0 / vel_perp_mag
+            n_hat = np.array([0.0, -vp1 * inv_mag, -vp2 * inv_mag])
 
             # CN_alpha from Mach-dependent table (per radian)
             cn_alpha = normal_force_coefficient_slope(mach)
@@ -280,12 +303,17 @@ class AerodynamicsModel:
             cop_com_arm = com_offset_from_nose - self.cop_offset_from_nose
 
             # Pitching moment about CoM: M = F_N * arm
-            # Cross n_hat with body-x to get torque axis direction
-            torque_axis = np.cross(np.array([1.0, 0.0, 0.0]), n_hat)
-            t_mag = float(np.linalg.norm(torque_axis))
+            # Cross body-x = [1,0,0] with n_hat = [0, nh1, nh2] simplifies to
+            # [0, -nh2, nh1]; then normalise.
+            nh1, nh2 = n_hat[1], n_hat[2]
+            t_mag = math.sqrt(nh1 * nh1 + nh2 * nh2)
             if t_mag > 1.0e-10:
-                torque_axis /= t_mag
-                aero_moment_body += cop_com_arm * f_normal_mag * torque_axis
+                inv_t = 1.0 / t_mag
+                axis1 = -nh2 * inv_t
+                axis2 = nh1 * inv_t
+                scale = cop_com_arm * f_normal_mag
+                aero_moment_body[1] += scale * axis1
+                aero_moment_body[2] += scale * axis2
 
         # --- Pitch damping moment (Cmq) ---
         # M_damp = Cmq * (q * S_ref * L) * (omega * L / (2V))

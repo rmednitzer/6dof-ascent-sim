@@ -46,6 +46,13 @@ class FlexBody:
         self._slope_imu: np.ndarray = np.array(config.FLEX_MODE_SLOPES_AT_IMU[: self._n], dtype=float)
         self._slope_engine: np.ndarray = np.array(config.FLEX_MODE_SLOPES_AT_ENGINE[: self._n], dtype=float)
 
+        # Pre-scaled natural frequency arrays (rad/s) — avoids repeating the
+        # `2 * pi * f` multiplication on every update() call.
+        two_pi = 2.0 * np.pi
+        self._omega_full: np.ndarray = two_pi * self._freq_full_hz
+        self._omega_empty: np.ndarray = two_pi * self._freq_empty_hz
+        self._two_zeta: np.ndarray = 2.0 * self._zeta
+
         # Per-mode state (vectorised).
         self._q: np.ndarray = np.zeros(self._n, dtype=float)
         self._q_dot: np.ndarray = np.zeros(self._n, dtype=float)
@@ -62,9 +69,12 @@ class FlexBody:
         propellant_fraction : float
             Fraction of propellant remaining, in [0, 1].
         """
-        frac = float(np.clip(propellant_fraction, 0.0, 1.0))
-        freq_hz = self._freq_full_hz * frac + self._freq_empty_hz * (1.0 - frac)
-        return 2.0 * np.pi * freq_hz
+        frac = propellant_fraction
+        if frac < 0.0:
+            frac = 0.0
+        elif frac > 1.0:
+            frac = 1.0
+        return self._omega_full * frac + self._omega_empty * (1.0 - frac)
 
     # ------------------------------------------------------------------
     # Public API
@@ -113,10 +123,13 @@ class FlexBody:
         omega = self._omega(propellant_fraction)  # (n,)
 
         # Generalised force: TVC projected onto mode shape at engine.
-        f_over_m = (tvc_force_n * self._slope_engine) / modal_mass_kg
+        force_scale = tvc_force_n / modal_mass_kg
 
-        # q̈ = -2ζωq̇ - ω²q + F/m
-        q_ddot = -2.0 * self._zeta * omega * self._q_dot - (omega**2) * self._q + f_over_m
+        # q̈ = F/m - 2ζω*q̇ - ω²*q   (evaluated in-place on scratch buffer)
+        damping = self._two_zeta * omega  # 2ζω
+        q_ddot = force_scale * self._slope_engine
+        q_ddot -= damping * self._q_dot
+        q_ddot -= (omega * omega) * self._q
 
         # Semi-implicit Euler (symplectic — conserves energy better
         # than explicit Euler for oscillators).
