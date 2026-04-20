@@ -19,6 +19,7 @@ from sim.config import (
     FTS_COVARIANCE_LIMIT_M,
     FTS_CROSSRANGE_LIMIT_M,
 )
+from sim.core.fast_math import max_sigma_3x3
 from sim.safety.boundary_enforcer import BoundaryEnforcer, BoundaryResult
 
 
@@ -188,57 +189,11 @@ class FlightTerminationSystem:
     def _compute_position_uncertainty(cov: np.ndarray) -> float:
         """Largest 1-sigma position uncertainty from a 3x3 covariance matrix.
 
-        Uses the analytic closed-form eigenvalue solution for a symmetric
-        3x3 matrix (Smith, 1961), which is roughly an order of magnitude
-        faster than ``np.linalg.eigvalsh`` for this small size and avoids the
-        per-call numpy dispatch overhead.
+        Delegates to :func:`sim.core.fast_math.max_sigma_3x3`, which is also
+        used by the health monitor so both safety consumers share one vetted
+        implementation.
         """
-        a00 = cov[0, 0]
-        a11 = cov[1, 1]
-        a22 = cov[2, 2]
-        a01 = cov[0, 1]
-        a02 = cov[0, 2]
-        a12 = cov[1, 2]
-
-        # Off-diagonal check: if nearly diagonal, the eigenvalues are the
-        # diagonal entries themselves.
-        p1 = a01 * a01 + a02 * a02 + a12 * a12
-        if p1 < 1e-30:
-            max_eig = a00
-            if a11 > max_eig:
-                max_eig = a11
-            if a22 > max_eig:
-                max_eig = a22
-            if max_eig < 0.0:
-                max_eig = abs(max_eig)
-            return math.sqrt(max_eig)
-
-        q = (a00 + a11 + a22) / 3.0
-        d00 = a00 - q
-        d11 = a11 - q
-        d22 = a22 - q
-        p2 = d00 * d00 + d11 * d11 + d22 * d22 + 2.0 * p1
-        p = math.sqrt(p2 / 6.0)
-
-        # det(B) where B = (A - q*I) / p
-        inv_p = 1.0 / p
-        b00 = d00 * inv_p
-        b11 = d11 * inv_p
-        b22 = d22 * inv_p
-        b01 = a01 * inv_p
-        b02 = a02 * inv_p
-        b12 = a12 * inv_p
-        det_b = b00 * (b11 * b22 - b12 * b12) - b01 * (b01 * b22 - b12 * b02) + b02 * (b01 * b12 - b11 * b02)
-        r = det_b * 0.5
-        if r > 1.0:
-            r = 1.0
-        elif r < -1.0:
-            r = -1.0
-
-        phi = math.acos(r) / 3.0
-        # Largest eigenvalue corresponds to the principal branch.
-        max_eig = q + 2.0 * p * math.cos(phi)
-        return math.sqrt(abs(max_eig))
+        return max_sigma_3x3(cov)
 
     def _trigger(
         self,
