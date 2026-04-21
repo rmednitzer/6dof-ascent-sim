@@ -7,6 +7,7 @@ a safe state (engines off / destruct).
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,6 +19,7 @@ from sim.config import (
     FTS_COVARIANCE_LIMIT_M,
     FTS_CROSSRANGE_LIMIT_M,
 )
+from sim.core.fast_math import max_sigma_3x3
 from sim.safety.boundary_enforcer import BoundaryEnforcer, BoundaryResult
 
 
@@ -158,33 +160,40 @@ class FlightTerminationSystem:
         cross-range deviation is simply the signed projection of the offset
         vector onto the normal.
         """
-        offset = np.asarray(position_ecef) - np.asarray(plane_point)
-        return float(np.dot(offset, np.asarray(plane_normal)))
+        dx = position_ecef[0] - plane_point[0]
+        dy = position_ecef[1] - plane_point[1]
+        dz = position_ecef[2] - plane_point[2]
+        return dx * plane_normal[0] + dy * plane_normal[1] + dz * plane_normal[2]
 
     @staticmethod
     def _compute_attitude_error(
         q_actual: np.ndarray,
         q_desired: np.ndarray,
     ) -> float:
-        """Angle (degrees) between two unit quaternions [w, x, y, z].
+        """Angle (degrees) between two unit quaternions [x, y, z, w].
 
         Uses the inner-product formula:
             theta = 2 * arccos(|q_actual . q_desired|)
         """
-        q_a = np.asarray(q_actual, dtype=np.float64)
-        q_d = np.asarray(q_desired, dtype=np.float64)
-        dot = np.clip(np.abs(np.dot(q_a, q_d)), 0.0, 1.0)
-        return float(np.degrees(2.0 * np.arccos(dot)))
+        dot = abs(
+            q_actual[0] * q_desired[0]
+            + q_actual[1] * q_desired[1]
+            + q_actual[2] * q_desired[2]
+            + q_actual[3] * q_desired[3]
+        )
+        if dot > 1.0:
+            dot = 1.0
+        return math.degrees(2.0 * math.acos(dot))
 
     @staticmethod
     def _compute_position_uncertainty(cov: np.ndarray) -> float:
         """Largest 1-sigma position uncertainty from a 3x3 covariance matrix.
 
-        Returns the square root of the largest eigenvalue.
+        Delegates to :func:`sim.core.fast_math.max_sigma_3x3`, which is also
+        used by the health monitor so both safety consumers share one vetted
+        implementation.
         """
-        cov = np.asarray(cov, dtype=np.float64)
-        eigenvalues = np.linalg.eigvalsh(cov)
-        return float(np.sqrt(np.max(np.abs(eigenvalues))))
+        return max_sigma_3x3(cov)
 
     def _trigger(
         self,

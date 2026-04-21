@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -30,27 +31,50 @@ class VehicleState:
     time_s: float = 0.0
 
     def altitude_m(self) -> float:
-        """Geodetic altitude above WGS84 ellipsoid (m)."""
+        """Geodetic altitude above WGS84 ellipsoid (m).
+
+        Result is memoised on the instance to amortise across the multiple
+        per-step consumers (sensors, recorder, insertion check).  The cache
+        key is ``(id(position_eci), time_s)``; because ``rk4_step`` returns a
+        fresh state (and fresh position array) every integration step, any
+        genuine change automatically invalidates the cache.
+        """
         from sim.core.reference_frames import ecef_to_lla, eci_to_ecef
 
-        r = np.linalg.norm(self.position_eci)
-        if r < 1.0:
-            return 0.0
-        pos_ecef = eci_to_ecef(self.position_eci, self.time_s)
-        _, _, alt = ecef_to_lla(pos_ecef)
+        cache_key = (id(self.position_eci), self.time_s)
+        try:
+            if self._alt_cache_key == cache_key:  # type: ignore[has-type]
+                return self._alt_cache_value  # type: ignore[has-type]
+        except AttributeError:
+            pass
+
+        p0, p1, p2 = self.position_eci[0], self.position_eci[1], self.position_eci[2]
+        r_sq = p0 * p0 + p1 * p1 + p2 * p2
+        if r_sq < 1.0:
+            alt = 0.0
+        else:
+            pos_ecef = eci_to_ecef(self.position_eci, self.time_s)
+            _, _, alt = ecef_to_lla(pos_ecef)
+
+        self._alt_cache_key = cache_key
+        self._alt_cache_value = alt
         return alt
 
     def velocity_mag_ms(self) -> float:
         """Inertial speed magnitude (m/s)."""
-        return float(np.linalg.norm(self.velocity_eci))
+        v = self.velocity_eci
+        return math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
 
     def specific_orbital_energy(self) -> float:
         """Specific orbital energy (J/kg) via vis-viva."""
-        r = np.linalg.norm(self.position_eci)
-        v = np.linalg.norm(self.velocity_eci)
-        if r < 1.0:
+        p = self.position_eci
+        v = self.velocity_eci
+        r_sq = p[0] * p[0] + p[1] * p[1] + p[2] * p[2]
+        if r_sq < 1.0:
             return 0.0
-        return 0.5 * v**2 - config.EARTH_MU / r
+        r = math.sqrt(r_sq)
+        v_sq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2]
+        return 0.5 * v_sq - config.EARTH_MU / r
 
     def copy(self) -> VehicleState:
         """Return a deep copy of this state."""
@@ -65,7 +89,8 @@ class VehicleState:
 
     def normalize_quaternion(self) -> None:
         """Normalize the attitude quaternion in-place."""
-        norm = np.linalg.norm(self.quaternion)
+        q = self.quaternion
+        norm = math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3])
         if norm > 1e-10:
             self.quaternion /= norm
 
