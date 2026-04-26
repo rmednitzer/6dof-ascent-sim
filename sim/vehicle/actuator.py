@@ -45,11 +45,6 @@ class TVCActuator:
         self._rate: float = 0.0
 
     @property
-    def position_deg(self) -> float:
-        """Current actuator position (deg)."""
-        return math.degrees(self._position)
-
-    @property
     def position_rad(self) -> float:
         """Current actuator position (rad)."""
         return self._position
