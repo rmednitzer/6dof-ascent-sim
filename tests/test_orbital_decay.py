@@ -1,63 +1,58 @@
-"""Tests for orbital decay estimation (sim.orbital.decay)."""
+"""Tests for orbital decay calculations (sim.orbital.decay)."""
 
 import math
-import sys
-from unittest.mock import MagicMock
 
-# Mock numpy before importing simulation modules to allow tests to run in restricted environments.
-# This is necessary because the simulation modules depend on numpy which might not be installed.
-if 'numpy' not in sys.modules:
-    mock_np = MagicMock()
-    mock_np.bool_ = bool
-    sys.modules['numpy'] = mock_np
-    sys.modules['numpy.testing'] = MagicMock()
+import pytest
 
-import pytest  # noqa: E402
-
-from sim.orbital.decay import ballistic_coefficient  # noqa: E402
+from sim.orbital.decay import ballistic_coefficient
 
 
 class TestBallisticCoefficient:
-    """Verify ballistic coefficient calculations."""
+    """Verify ballistic coefficient calculation and edge cases."""
 
-    def test_ballistic_coefficient_default(self):
+    def test_standard_values(self):
+        """BC = m / (Cd * A) for typical values."""
+        mass = 1000.0
+        cd = 2.2
+        area = 10.0
+        expected = mass / (cd * area)
+        assert ballistic_coefficient(mass, cd, area) == pytest.approx(expected)
+
+    def test_default_parameters(self):
         """Verify calculation with default parameters (Cd=2.2, Area=10.52)."""
-        # Note: Default values Cd=2.2 and Area=10.52 are from sim.orbital.decay implementation
         mass = 5000.0
         expected = mass / (2.2 * 10.52)
         result = ballistic_coefficient(mass)
         assert result == pytest.approx(expected, rel=1e-10)
 
-    def test_ballistic_coefficient_custom(self):
-        """Verify calculation with custom provided parameters."""
-        mass = 1000.0
-        cd = 2.0
-        area = 10.0
-        expected = 1000.0 / (2.0 * 10.0)  # 50.0
-        result = ballistic_coefficient(mass, cd=cd, area_m2=area)
-        assert result == pytest.approx(expected, rel=1e-10)
+    def test_zero_cd_returns_inf(self):
+        """If Cd is zero, BC should be infinite (no drag)."""
+        assert ballistic_coefficient(1000.0, 0.0, 10.0) == math.inf
 
-    def test_ballistic_coefficient_zero_divisor(self):
-        """Verify it returns math.inf when cd * area_m2 is zero."""
-        assert ballistic_coefficient(1000.0, cd=0.0) == math.inf
-        assert ballistic_coefficient(1000.0, area_m2=0.0) == math.inf
-        assert ballistic_coefficient(1000.0, cd=0.0, area_m2=0.0) == math.inf
+    def test_zero_area_returns_inf(self):
+        """If area is zero, BC should be infinite (no drag)."""
+        assert ballistic_coefficient(1000.0, 2.2, 0.0) == math.inf
 
-    def test_ballistic_coefficient_small_divisor(self):
-        """Verify it returns math.inf when cd * area_m2 is below the 1e-12 threshold."""
-        # Threshold is 1e-12 in sim.orbital.decay implementation
-        assert ballistic_coefficient(1000.0, cd=1e-7, area_m2=1e-6) == math.inf
+    def test_very_small_drag_area_returns_inf(self):
+        """If Cd * A is extremely small, return inf to avoid numerical issues."""
+        assert ballistic_coefficient(1000.0, 1e-7, 1e-7) == math.inf
 
-        # Just above threshold
-        mass = 1000.0
-        cd = 1.1e-6
-        area = 1e-6
-        # cd * area = 1.1e-12 > 1e-12
-        expected = mass / (cd * area)
-        result = ballistic_coefficient(mass, cd=cd, area_m2=area)
-        assert result == pytest.approx(expected, rel=1e-10)
+    def test_negative_mass_raises_error(self):
+        """Mass must be positive."""
+        with pytest.raises(ValueError, match="Mass must be positive"):
+            ballistic_coefficient(-100.0, 2.2, 10.0)
 
-    def test_ballistic_coefficient_zero_mass(self):
-        """Verify it returns 0.0 when mass is zero and divisor is valid."""
-        assert ballistic_coefficient(0.0) == 0.0
-        assert ballistic_coefficient(0.0, cd=2.0, area_m2=10.0) == 0.0
+    def test_zero_mass_raises_error(self):
+        """Mass must be positive."""
+        with pytest.raises(ValueError, match="Mass must be positive"):
+            ballistic_coefficient(0.0, 2.2, 10.0)
+
+    def test_negative_cd_raises_error(self):
+        """Drag coefficient cannot be negative."""
+        with pytest.raises(ValueError, match="Drag coefficient and area must be non-negative"):
+            ballistic_coefficient(1000.0, -2.2, 10.0)
+
+    def test_negative_area_raises_error(self):
+        """Area cannot be negative."""
+        with pytest.raises(ValueError, match="Drag coefficient and area must be non-negative"):
+            ballistic_coefficient(1000.0, 2.2, -10.0)
