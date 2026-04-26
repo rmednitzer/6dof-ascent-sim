@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 import sys
 
@@ -582,9 +583,9 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
                 "period_min": elements.period_s / 60,
                 "correction_dv_ms": corr_dv,
             }
-        except Exception as e:
+        except Exception:
             if not quiet:
-                print(f"  Orbit analysis error: {e}")
+                logging.exception("Orbit analysis error")
 
     # --- Write telemetry (non-MC only) ---
     if not is_mc:
@@ -601,8 +602,8 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
                 from sim.analysis.postflight import generate_plots
 
                 generate_plots(recorder.internal_frames, summary)
-            except Exception as e:
-                print(f"  Plot generation error: {e}")
+            except Exception:
+                logging.exception("Plot generation error")
 
     # Return MonteCarloResult
 
@@ -657,6 +658,7 @@ def _print_summary(summary: MissionSummary, orbit: dict | None) -> None:
 
 def main() -> None:
     """CLI entry point."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     parser = argparse.ArgumentParser(description="6-DOF Launch Vehicle Ascent Simulation")
     parser.add_argument("--no-flex", action="store_true", help="Disable flex body model")
     parser.add_argument("--no-slosh", action="store_true", help="Disable propellant slosh model")
