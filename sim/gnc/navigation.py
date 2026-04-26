@@ -339,8 +339,7 @@ class NavigationEKF:
                 return  # reject entire measurement
 
         # Kalman gain
-        S_inv = np.linalg.inv(S)
-        K = self._P @ H.T @ S_inv
+        K = np.linalg.solve(S.T, H @ self._P).T
 
         # State update
         self._x = self._x + K @ y
