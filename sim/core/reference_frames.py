@@ -11,6 +11,15 @@ from sim import config
 #: Convergence tolerance for Bowring's iterative latitude solution (rad).
 _LAT_CONVERGENCE_TOL: float = 1e-12
 
+# Pre-computed WGS84 ellipsoid constants.  Hoisted out of ecef_to_lla to avoid
+# recomputing `b`, `e2`, etc. on every call (the function is evaluated hundreds
+# of thousands of times per simulation).
+_WGS84_A: float = config.EARTH_RADIUS_M
+_WGS84_F: float = config.EARTH_FLATTENING
+_WGS84_B: float = _WGS84_A * (1.0 - _WGS84_F)
+_WGS84_E2: float = 2.0 * _WGS84_F - _WGS84_F * _WGS84_F
+_WGS84_ONE_MINUS_E2: float = 1.0 - _WGS84_E2
+
 
 def eci_to_ecef(pos_eci: np.ndarray, time_s: float) -> np.ndarray:
     """Rotate ECI position to ECEF using Earth rotation angle.
@@ -24,14 +33,8 @@ def eci_to_ecef(pos_eci: np.ndarray, time_s: float) -> np.ndarray:
     """
     theta = config.EARTH_OMEGA * time_s
     c, s = math.cos(theta), math.sin(theta)
-    R = np.array(
-        [
-            [c, s, 0.0],
-            [-s, c, 0.0],
-            [0.0, 0.0, 1.0],
-        ]
-    )
-    return R @ pos_eci
+    x, y, z = pos_eci[0], pos_eci[1], pos_eci[2]
+    return np.array([c * x + s * y, -s * x + c * y, z])
 
 
 def ecef_to_eci(pos_ecef: np.ndarray, time_s: float) -> np.ndarray:
@@ -46,14 +49,8 @@ def ecef_to_eci(pos_ecef: np.ndarray, time_s: float) -> np.ndarray:
     """
     theta = config.EARTH_OMEGA * time_s
     c, s = math.cos(theta), math.sin(theta)
-    R = np.array(
-        [
-            [c, -s, 0.0],
-            [s, c, 0.0],
-            [0.0, 0.0, 1.0],
-        ]
-    )
-    return R @ pos_ecef
+    x, y, z = pos_ecef[0], pos_ecef[1], pos_ecef[2]
+    return np.array([c * x - s * y, s * x + c * y, z])
 
 
 def ecef_to_lla(pos_ecef: np.ndarray) -> tuple[float, float, float]:
@@ -67,20 +64,18 @@ def ecef_to_lla(pos_ecef: np.ndarray) -> tuple[float, float, float]:
     Returns:
         (latitude_rad, longitude_rad, altitude_m).
     """
-    x, y, z = pos_ecef
-    a = config.EARTH_RADIUS_M
-    f = config.EARTH_FLATTENING
-    b = a * (1.0 - f)
-    e2 = 2 * f - f**2
+    x, y, z = pos_ecef[0], pos_ecef[1], pos_ecef[2]
+    a = _WGS84_A
+    e2 = _WGS84_E2
 
     lon = math.atan2(y, x)
-    p = math.sqrt(x**2 + y**2)
+    p = math.sqrt(x * x + y * y)
 
     # Iterative solution (Bowring's method) with early termination
-    lat = math.atan2(z, p * (1.0 - e2))
+    lat = math.atan2(z, p * _WGS84_ONE_MINUS_E2)
     for _ in range(10):
         sin_lat = math.sin(lat)
-        N = a / math.sqrt(1.0 - e2 * sin_lat**2)
+        N = a / math.sqrt(1.0 - e2 * sin_lat * sin_lat)
         lat_new = math.atan2(z + e2 * N * sin_lat, p)
         if abs(lat_new - lat) < _LAT_CONVERGENCE_TOL:
             lat = lat_new
@@ -89,12 +84,12 @@ def ecef_to_lla(pos_ecef: np.ndarray) -> tuple[float, float, float]:
 
     sin_lat = math.sin(lat)
     cos_lat = math.cos(lat)
-    N = a / math.sqrt(1.0 - e2 * sin_lat**2)
+    N = a / math.sqrt(1.0 - e2 * sin_lat * sin_lat)
 
     if abs(cos_lat) > 1e-10:
         alt = p / cos_lat - N
     else:
-        alt = abs(z) - b
+        alt = abs(z) - _WGS84_B
 
     return lat, lon, alt
 
@@ -110,16 +105,13 @@ def lla_to_ecef(lat_rad: float, lon_rad: float, alt_m: float) -> np.ndarray:
     Returns:
         ECEF position (m).
     """
-    a = config.EARTH_RADIUS_M
-    f = config.EARTH_FLATTENING
-    e2 = 2 * f - f**2
     sin_lat = math.sin(lat_rad)
     cos_lat = math.cos(lat_rad)
-    N = a / math.sqrt(1.0 - e2 * sin_lat**2)
+    N = _WGS84_A / math.sqrt(1.0 - _WGS84_E2 * sin_lat * sin_lat)
 
     x = (N + alt_m) * cos_lat * math.cos(lon_rad)
     y = (N + alt_m) * cos_lat * math.sin(lon_rad)
-    z = (N * (1.0 - e2) + alt_m) * sin_lat
+    z = (N * _WGS84_ONE_MINUS_E2 + alt_m) * sin_lat
     return np.array([x, y, z])
 
 
@@ -174,6 +166,9 @@ def quat_to_dcm(q: np.ndarray) -> np.ndarray:
 def body_to_eci(vec_body: np.ndarray, quaternion: np.ndarray) -> np.ndarray:
     """Rotate a body-frame vector to ECI using attitude quaternion.
 
+    Uses direct quaternion rotation (v' = q * v * q^-1 expanded) to avoid
+    materialising the 3x3 direction cosine matrix for a single rotation.
+
     Args:
         vec_body: Vector in body frame.
         quaternion: Attitude quaternion [x, y, z, w].
@@ -181,12 +176,29 @@ def body_to_eci(vec_body: np.ndarray, quaternion: np.ndarray) -> np.ndarray:
     Returns:
         Vector in ECI frame.
     """
-    dcm = quat_to_dcm(quaternion)
-    return dcm.T @ vec_body
+    x, y, z, w = quaternion[0], quaternion[1], quaternion[2], quaternion[3]
+    vx, vy, vz = vec_body[0], vec_body[1], vec_body[2]
+
+    # t = 2 * (q_vec x v)
+    tx = 2.0 * (y * vz - z * vy)
+    ty = 2.0 * (z * vx - x * vz)
+    tz = 2.0 * (x * vy - y * vx)
+
+    # v_rot = v + w * t + q_vec x t   (body-to-inertial: +w*t + q×t)
+    return np.array(
+        [
+            vx + w * tx + (y * tz - z * ty),
+            vy + w * ty + (z * tx - x * tz),
+            vz + w * tz + (x * ty - y * tx),
+        ]
+    )
 
 
 def eci_to_body(vec_eci: np.ndarray, quaternion: np.ndarray) -> np.ndarray:
     """Rotate an ECI vector to body frame using attitude quaternion.
+
+    Inverse of :func:`body_to_eci`; uses conjugate quaternion (negated
+    vector part) without materialising the DCM.
 
     Args:
         vec_eci: Vector in ECI frame.
@@ -195,8 +207,22 @@ def eci_to_body(vec_eci: np.ndarray, quaternion: np.ndarray) -> np.ndarray:
     Returns:
         Vector in body frame.
     """
-    dcm = quat_to_dcm(quaternion)
-    return dcm @ vec_eci
+    x, y, z, w = quaternion[0], quaternion[1], quaternion[2], quaternion[3]
+    vx, vy, vz = vec_eci[0], vec_eci[1], vec_eci[2]
+
+    # t = 2 * (q_vec x v)
+    tx = 2.0 * (y * vz - z * vy)
+    ty = 2.0 * (z * vx - x * vz)
+    tz = 2.0 * (x * vy - y * vx)
+
+    # v_rot = v - w * t + q_vec x t   (inertial-to-body: -w*t + q×t)
+    return np.array(
+        [
+            vx - w * tx + (y * tz - z * ty),
+            vy - w * ty + (z * tx - x * tz),
+            vz - w * tz + (x * ty - y * tx),
+        ]
+    )
 
 
 def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
@@ -209,8 +235,8 @@ def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     Returns:
         Product quaternion q1 * q2.
     """
-    x1, y1, z1, w1 = q1
-    x2, y2, z2, w2 = q2
+    x1, y1, z1, w1 = q1[0], q1[1], q1[2], q1[3]
+    x2, y2, z2, w2 = q2[0], q2[1], q2[2], q2[3]
     return np.array(
         [
             w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
@@ -264,5 +290,14 @@ def quaternion_derivative(q: np.ndarray, omega_body: np.ndarray) -> np.ndarray:
     Returns:
         Quaternion derivative [dx, dy, dz, dw]/dt.
     """
-    omega_quat = np.array([omega_body[0], omega_body[1], omega_body[2], 0.0])
-    return 0.5 * quaternion_multiply(q, omega_quat)
+    x, y, z, w = q[0], q[1], q[2], q[3]
+    ox, oy, oz = omega_body[0], omega_body[1], omega_body[2]
+    # 0.5 * q * [omega, 0], expanded directly
+    return np.array(
+        [
+            0.5 * (w * ox + y * oz - z * oy),
+            0.5 * (w * oy - x * oz + z * ox),
+            0.5 * (w * oz + x * oy - y * ox),
+            -0.5 * (x * ox + y * oy + z * oz),
+        ]
+    )

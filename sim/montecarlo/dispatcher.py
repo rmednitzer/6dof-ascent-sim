@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import multiprocessing
 import time
 from dataclasses import asdict, dataclass
@@ -54,6 +55,7 @@ def _run_single(args: tuple[int, int, dict]) -> dict:
         result = run_simulation(config_override=config_override, quiet=True)
         return asdict(result)
     except Exception as e:
+        logging.exception("Monte Carlo run %d failed", run_index)
         return asdict(
             MonteCarloResult(
                 run_index=run_index,
@@ -141,6 +143,7 @@ class MonteCarloDispatcher:
 
 def main() -> None:
     """Entry point for Monte Carlo campaign."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     parser = argparse.ArgumentParser(description="Monte Carlo ascent simulation")
     parser.add_argument("--runs", type=int, default=config.MC_NUM_RUNS, help="Number of runs")
     parser.add_argument("--seed", type=int, default=config.MC_SEED, help="Base random seed")

@@ -18,6 +18,8 @@ vehicle CG that result from pendulum motion.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from sim import config
@@ -63,6 +65,13 @@ class SloshModel:
         self._zeta: float = float(config.SLOSH_DAMPING_RATIO)
         self._arm_m: float = float(config.SLOSH_ARM_LENGTH_M)
 
+        # Pre-computed scalar derivatives — save two multiplies per update.
+        two_pi = 2.0 * math.pi
+        self._omega_full: float = two_pi * self._freq_full_hz
+        self._omega_empty: float = two_pi * self._freq_empty_hz
+        self._two_zeta: float = 2.0 * self._zeta
+        self._mass_per_tank: float = self._mass_fraction / self._n
+
         # Per-tank pendulum state (vectorised).
         self._theta: np.ndarray = np.zeros(n_tanks, dtype=float)
         self._theta_dot: np.ndarray = np.zeros(n_tanks, dtype=float)
@@ -73,13 +82,16 @@ class SloshModel:
 
     def _omega(self, propellant_fraction: float) -> float:
         """Natural frequency (rad/s) interpolated by fill level."""
-        frac = float(np.clip(propellant_fraction, 0.0, 1.0))
-        freq_hz = self._freq_full_hz * frac + self._freq_empty_hz * (1.0 - frac)
-        return 2.0 * np.pi * freq_hz
+        frac = propellant_fraction
+        if frac < 0.0:
+            frac = 0.0
+        elif frac > 1.0:
+            frac = 1.0
+        return self._omega_full * frac + self._omega_empty * (1.0 - frac)
 
     def _slosh_mass(self, propellant_mass_kg: float) -> float:
         """Participating slosh mass (kg) for one tank."""
-        return self._mass_fraction * propellant_mass_kg / self._n
+        return self._mass_per_tank * propellant_mass_kg
 
     # ------------------------------------------------------------------
     # Public API
@@ -134,17 +146,17 @@ class SloshModel:
 
         # Pendulum EOM:
         #   θ̈ + 2ζωθ̇ + ω²θ = a_lat / L
-        theta_ddot = (
-            -2.0 * self._zeta * omega * self._theta_dot - omega * omega * self._theta + lateral_accel_mps2 / arm
-        )
+        omega_sq = omega * omega
+        damping = self._two_zeta * omega
+        theta_ddot = lateral_accel_mps2 / arm - damping * self._theta_dot - omega_sq * self._theta
 
         # Semi-implicit Euler integration.
         self._theta_dot += theta_ddot * dt
         self._theta += self._theta_dot * dt
 
         # Force exerted by the slosh mass on the vehicle.
-        #   F = m_slosh * (ω²*L*θ + 2ζωL*θ̇ )
-        forces = m_slosh * arm * (omega * omega * self._theta + 2.0 * self._zeta * omega * self._theta_dot)
+        #   F = m_slosh * L * (ω²*θ + 2ζω*θ̇ )
+        forces = (m_slosh * arm) * (omega_sq * self._theta + damping * self._theta_dot)
         torques = forces * self._tank_offsets
 
         return forces, torques

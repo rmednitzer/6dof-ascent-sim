@@ -140,10 +140,9 @@ def wind_velocity_eci(
     wind_ecef = R_ned_to_ecef @ wind_ned
 
     # The atmosphere co-rotates with the Earth, so the atmospheric velocity
-    # in ECI includes Earth-rotation.  This ensures that a vehicle at rest
-    # on the launch pad experiences near-zero airspeed.
-    omega_earth = np.array([0.0, 0.0, config.EARTH_OMEGA])
-    atmo_corotation_eci = np.cross(omega_earth, position_eci)
+    # in ECI includes Earth-rotation.  Cross([0,0,omega], p) = [-omega*p_y, omega*p_x, 0].
+    omega_z = config.EARTH_OMEGA
+    atmo_corotation_eci = np.array([-omega_z * position_eci[1], omega_z * position_eci[0], 0.0])
 
     wind_eci = ecef_to_eci(wind_ecef, time_s) + atmo_corotation_eci
 
