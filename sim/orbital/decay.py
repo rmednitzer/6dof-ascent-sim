@@ -123,7 +123,7 @@ def ballistic_coefficient(
     Raises
     ------
     ValueError
-        If mass_kg is non-positive or if cd/area_m2 are negative.
+        If mass_kg is non-positive, or if cd or area_m2 is negative.
     """
     if mass_kg <= 0:
         raise ValueError("Mass must be positive.")

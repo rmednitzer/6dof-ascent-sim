@@ -61,15 +61,19 @@ DerivativesFn = Callable[[float, VehicleState], StateDot]
 
 
 def _apply_state_dot(state: VehicleState, dot: StateDot, dt: float) -> VehicleState:
-    """Apply derivatives to state over timestep dt."""
-    new = state.copy()
-    new.position_eci = state.position_eci + dot.velocity_eci * dt
-    new.velocity_eci = state.velocity_eci + dot.acceleration_eci * dt
-    new.quaternion = state.quaternion + dot.quaternion_dot * dt
-    new.angular_velocity_body = state.angular_velocity_body + dot.angular_acceleration_body * dt
-    new.mass_kg = max(0.0, state.mass_kg + dot.mass_rate_kg_s * dt)
-    new.time_s = state.time_s + dt
-    return new
+    """Apply derivatives to state over timestep dt.
+
+    Builds the new state directly rather than copying first; the copy()
+    allocated four arrays that were immediately overwritten.
+    """
+    return VehicleState(
+        position_eci=state.position_eci + dot.velocity_eci * dt,
+        velocity_eci=state.velocity_eci + dot.acceleration_eci * dt,
+        quaternion=state.quaternion + dot.quaternion_dot * dt,
+        angular_velocity_body=state.angular_velocity_body + dot.angular_acceleration_body * dt,
+        mass_kg=max(0.0, state.mass_kg + dot.mass_rate_kg_s * dt),
+        time_s=state.time_s + dt,
+    )
 
 
 def rk4_step(
@@ -88,26 +92,57 @@ def rk4_step(
         New vehicle state at t + dt.
     """
     t = state.time_s
+    half_dt = 0.5 * dt
 
     k1 = derivatives_fn(t, state)
-    s2 = _apply_state_dot(state, k1, 0.5 * dt)
-    k2 = derivatives_fn(t + 0.5 * dt, s2)
-    s3 = _apply_state_dot(state, k2, 0.5 * dt)
-    k3 = derivatives_fn(t + 0.5 * dt, s3)
+    s2 = _apply_state_dot(state, k1, half_dt)
+    k2 = derivatives_fn(t + half_dt, s2)
+    s3 = _apply_state_dot(state, k2, half_dt)
+    k3 = derivatives_fn(t + half_dt, s3)
     s4 = _apply_state_dot(state, k3, dt)
     k4 = derivatives_fn(t + dt, s4)
 
-    # Weighted average: (k1 + 2*k2 + 2*k3 + k4) / 6
-    combined = k1.add(k2.scale(2.0)).add(k3.scale(2.0)).add(k4)
-    combined = combined.scale(1.0 / 6.0)
+    # Weighted RK4 increment applied directly: state + (dt/6) * (k1 + 2*k2 + 2*k3 + k4).
+    # Done inline (rather than via StateDot.scale/add helpers) to avoid allocating
+    # several transient StateDot objects every step.
+    sixth = dt / 6.0
 
-    new_state = _apply_state_dot(state, combined, dt)
+    new_pos = state.position_eci + sixth * (
+        k1.velocity_eci + 2.0 * (k2.velocity_eci + k3.velocity_eci) + k4.velocity_eci
+    )
+    new_vel = state.velocity_eci + sixth * (
+        k1.acceleration_eci + 2.0 * (k2.acceleration_eci + k3.acceleration_eci) + k4.acceleration_eci
+    )
+    new_quat = state.quaternion + sixth * (
+        k1.quaternion_dot + 2.0 * (k2.quaternion_dot + k3.quaternion_dot) + k4.quaternion_dot
+    )
+    new_omega = state.angular_velocity_body + sixth * (
+        k1.angular_acceleration_body
+        + 2.0 * (k2.angular_acceleration_body + k3.angular_acceleration_body)
+        + k4.angular_acceleration_body
+    )
+    new_mass = state.mass_kg + sixth * (
+        k1.mass_rate_kg_s + 2.0 * (k2.mass_rate_kg_s + k3.mass_rate_kg_s) + k4.mass_rate_kg_s
+    )
+
+    new_state = VehicleState(
+        position_eci=new_pos,
+        velocity_eci=new_vel,
+        quaternion=new_quat,
+        angular_velocity_body=new_omega,
+        mass_kg=max(0.0, new_mass),
+        time_s=state.time_s + dt,
+    )
     new_state.normalize_quaternion()
 
     # NaN/Inf check
-    for arr in [new_state.position_eci, new_state.velocity_eci, new_state.quaternion, new_state.angular_velocity_body]:
-        if not np.all(np.isfinite(arr)):
-            raise RuntimeError(f"NaN/Inf detected in integrator at t={new_state.time_s:.3f}s")
+    if not (
+        np.all(np.isfinite(new_state.position_eci))
+        and np.all(np.isfinite(new_state.velocity_eci))
+        and np.all(np.isfinite(new_state.quaternion))
+        and np.all(np.isfinite(new_state.angular_velocity_body))
+    ):
+        raise RuntimeError(f"NaN/Inf detected in integrator at t={new_state.time_s:.3f}s")
     if not np.isfinite(new_state.mass_kg):
         raise RuntimeError(f"NaN/Inf in mass at t={new_state.time_s:.3f}s")
 

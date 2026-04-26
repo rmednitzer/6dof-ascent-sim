@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 import sys
 
 import numpy as np
 
 from sim import config
+from sim.core.fast_math import cross3, dot3, norm3
 from sim.core.integrator import StateDot, rk4_step
 from sim.core.reference_frames import (
     body_to_eci,
@@ -51,19 +53,19 @@ def _init_state() -> VehicleState:
 
     # Initial velocity = Earth rotation at launch site
     omega = np.array([0.0, 0.0, config.EARTH_OMEGA])
-    vel_eci = np.cross(omega, pos_eci)
+    vel_eci = cross3(omega, pos_eci)
 
     # Initial quaternion: vehicle thrust axis (+X body) pointing radially outward
-    up_eci = pos_eci / np.linalg.norm(pos_eci)
+    up_eci = pos_eci / norm3(pos_eci)
     body_x = np.array([1.0, 0.0, 0.0])
-    dot = np.dot(body_x, up_eci)
+    dot = dot3(body_x, up_eci)
     if abs(dot - 1.0) < 1e-10:
         quat = np.array([0.0, 0.0, 0.0, 1.0])
     elif abs(dot + 1.0) < 1e-10:
         quat = np.array([0.0, 1.0, 0.0, 0.0])
     else:
-        axis = np.cross(body_x, up_eci)
-        axis /= np.linalg.norm(axis)
+        axis = cross3(body_x, up_eci)
+        axis /= norm3(axis)
         angle = math.acos(np.clip(dot, -1.0, 1.0))
         quat = quaternion_from_axis_angle(axis, angle)
 
@@ -203,12 +205,12 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
     # Downrange direction in ECEF (along launch azimuth)
     downrange_ecef = north_ecef * math.cos(launch_azimuth_rad) + east_ecef * math.sin(launch_azimuth_rad)
     # Up direction in ECEF
-    up_ecef = pos_ecef_init / np.linalg.norm(pos_ecef_init)
+    up_ecef = pos_ecef_init / norm3(pos_ecef_init)
 
     # The nominal trajectory plane contains up and downrange.
     # The plane normal is perpendicular to both (cross-range direction).
-    nominal_plane_normal = np.cross(downrange_ecef, up_ecef)
-    nominal_plane_normal /= np.linalg.norm(nominal_plane_normal)
+    nominal_plane_normal = cross3(downrange_ecef, up_ecef)
+    nominal_plane_normal /= norm3(nominal_plane_normal)
     nominal_plane_point = pos_ecef_init.copy()
 
     # Tracking variables
@@ -241,7 +243,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
 
         # --- Aerodynamics (wind-relative velocity and Mach) ---
         vel_rel = true_state.velocity_eci - wind_eci
-        vel_rel_mag = float(np.linalg.norm(vel_rel))
+        vel_rel_mag = norm3(vel_rel)
         mach = vel_rel_mag / max(speed_of_sound, 1.0)
         q_pa = 0.5 * rho * vel_rel_mag * vel_rel_mag
         peak_q = max(peak_q, q_pa)
@@ -534,9 +536,9 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             and vel > config.TARGET_VELOCITY_MS * 0.92
             and vehicle.stage_index >= 1
         ):
-            r_hat = true_state.position_eci / max(np.linalg.norm(true_state.position_eci), 1.0)
+            r_hat = true_state.position_eci / max(norm3(true_state.position_eci), 1.0)
             v_hat = true_state.velocity_eci / max(vel, 1.0)
-            fpa = math.asin(np.clip(np.dot(r_hat, v_hat), -1.0, 1.0))
+            fpa = math.asin(np.clip(dot3(r_hat, v_hat), -1.0, 1.0))
             if abs(math.degrees(fpa)) < 15.0:
                 outcome = "SUCCESS"
                 if not quiet:
@@ -552,11 +554,11 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
 
     # Compute flight path angle
     final_fpa = 0.0
-    r_norm = np.linalg.norm(true_state.position_eci)
+    r_norm = norm3(true_state.position_eci)
     if r_norm > 0 and true_state.velocity_mag_ms() > 0:
         r_hat = true_state.position_eci / r_norm
         v_hat = true_state.velocity_eci / true_state.velocity_mag_ms()
-        final_fpa = math.degrees(math.asin(np.clip(np.dot(r_hat, v_hat), -1.0, 1.0)))
+        final_fpa = math.degrees(math.asin(np.clip(dot3(r_hat, v_hat), -1.0, 1.0)))
 
     # --- Post-insertion orbit analysis ---
     orbit_elements_dict = None
@@ -581,9 +583,9 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
                 "period_min": elements.period_s / 60,
                 "correction_dv_ms": corr_dv,
             }
-        except Exception as e:
+        except Exception:
             if not quiet:
-                print(f"  Orbit analysis error: {e}")
+                logging.exception("Orbit analysis error")
 
     # --- Write telemetry (non-MC only) ---
     if not is_mc:
@@ -600,8 +602,8 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
                 from sim.analysis.postflight import generate_plots
 
                 generate_plots(recorder.internal_frames, summary)
-            except Exception as e:
-                print(f"  Plot generation error: {e}")
+            except Exception:
+                logging.exception("Plot generation error")
 
     # Return MonteCarloResult
 
@@ -656,6 +658,7 @@ def _print_summary(summary: MissionSummary, orbit: dict | None) -> None:
 
 def main() -> None:
     """CLI entry point."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     parser = argparse.ArgumentParser(description="6-DOF Launch Vehicle Ascent Simulation")
     parser.add_argument("--no-flex", action="store_true", help="Disable flex body model")
     parser.add_argument("--no-slosh", action="store_true", help="Disable propellant slosh model")

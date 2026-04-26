@@ -15,6 +15,7 @@ from sim.config import (
     FTS_COVARIANCE_LIMIT_M,
     MAX_Q_PA,
 )
+from sim.core.fast_math import max_sigma_3x3
 
 
 # ------------------------------------------------------------------
@@ -146,10 +147,12 @@ class HealthMonitor:
         """EKF position covariance health.
 
         Largest 1-sigma position uncertainty compared against FTS limit.
+
+        Uses the analytic closed-form solution for a symmetric 3x3 matrix,
+        which avoids the relatively expensive ``np.linalg.eigvalsh`` call in
+        this per-timestep hot path.
         """
-        cov = np.asarray(cov, dtype=np.float64)
-        eigenvalues = np.linalg.eigvalsh(cov)
-        sigma = float(np.sqrt(np.max(np.abs(eigenvalues))))
+        sigma = max_sigma_3x3(cov)
         frac = sigma / FTS_COVARIANCE_LIMIT_M if FTS_COVARIANCE_LIMIT_M else 0.0
 
         if frac >= 1.0:

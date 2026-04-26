@@ -1,17 +1,10 @@
 """Tests for orbital decay calculations (sim.orbital.decay)."""
 
 import math
-import sys
-from unittest.mock import MagicMock
 
-# Mock numpy before importing any sim modules that might use it
-mock_np = MagicMock()
-mock_np.bool_ = bool  # pytest.approx checks for np.bool_
-sys.modules["numpy"] = mock_np
+import pytest
 
-import pytest  # noqa: E402
-
-from sim.orbital.decay import ballistic_coefficient  # noqa: E402
+from sim.orbital.decay import ballistic_coefficient
 
 
 class TestBallisticCoefficient:
@@ -24,6 +17,13 @@ class TestBallisticCoefficient:
         area = 10.0
         expected = mass / (cd * area)
         assert ballistic_coefficient(mass, cd, area) == pytest.approx(expected)
+
+    def test_default_parameters(self):
+        """Verify calculation with default parameters (Cd=2.2, Area=10.52)."""
+        mass = 5000.0
+        expected = mass / (2.2 * 10.52)
+        result = ballistic_coefficient(mass)
+        assert result == pytest.approx(expected, rel=1e-10)
 
     def test_zero_cd_returns_inf(self):
         """If Cd is zero, BC should be infinite (no drag)."""
