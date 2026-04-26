@@ -119,7 +119,17 @@ def ballistic_coefficient(
     -------
     float
         Ballistic coefficient (kg/m^2).
+
+    Raises
+    ------
+    ValueError
+        If mass_kg is non-positive, or if cd or area_m2 is negative.
     """
+    if mass_kg <= 0:
+        raise ValueError("Mass must be positive.")
+    if cd < 0 or area_m2 < 0:
+        raise ValueError("Drag coefficient and area must be non-negative.")
+
     if cd * area_m2 < 1e-12:
         return math.inf
     return mass_kg / (cd * area_m2)
