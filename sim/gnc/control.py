@@ -14,6 +14,7 @@ Reference:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -94,14 +95,20 @@ class AttitudeController:
         # - At reference q: unity gain
         if dynamic_pressure_pa > 100.0:
             q_factor = q_ref / max(dynamic_pressure_pa, 100.0)
-            q_factor = np.clip(q_factor, 0.3, 3.0)
+            if q_factor < 0.3:
+                q_factor = 0.3
+            elif q_factor > 3.0:
+                q_factor = 3.0
         else:
             # Exoatmospheric: boost gains to compensate for lack of aero stiffness
             q_factor = 1.5
 
         # Mass scheduling: scale with sqrt of mass ratio (lower mass = lower inertia)
-        mass_factor = np.sqrt(max(mass_kg, 1000.0) / mass_ref)
-        mass_factor = np.clip(mass_factor, 0.5, 2.0)
+        mass_factor = math.sqrt(max(mass_kg, 1000.0) / mass_ref)
+        if mass_factor < 0.5:
+            mass_factor = 0.5
+        elif mass_factor > 2.0:
+            mass_factor = 2.0
 
         gain_scale = q_factor * mass_factor
 
@@ -155,18 +162,32 @@ class AttitudeController:
         self._integral_pitch += err_pitch * dt
         self._integral_yaw += err_yaw * dt
 
-        self._integral_pitch = np.clip(self._integral_pitch, -self._int_limit_rad, self._int_limit_rad)
-        self._integral_yaw = np.clip(self._integral_yaw, -self._int_limit_rad, self._int_limit_rad)
+        int_limit = self._int_limit_rad
+        if self._integral_pitch > int_limit:
+            self._integral_pitch = int_limit
+        elif self._integral_pitch < -int_limit:
+            self._integral_pitch = -int_limit
+        if self._integral_yaw > int_limit:
+            self._integral_yaw = int_limit
+        elif self._integral_yaw < -int_limit:
+            self._integral_yaw = -int_limit
 
         # PID law using scheduled gains
         cmd_pitch_rad = self._kp * err_pitch - self._kd * rate_pitch + self._ki * self._integral_pitch
         cmd_yaw_rad = -(self._kp * err_yaw - self._kd * rate_yaw + self._ki * self._integral_yaw)
 
-        cmd_pitch_deg = np.degrees(cmd_pitch_rad)
-        cmd_yaw_deg = np.degrees(cmd_yaw_rad)
+        rad_to_deg = 180.0 / math.pi
+        cmd_pitch_deg = cmd_pitch_rad * rad_to_deg
+        cmd_yaw_deg = cmd_yaw_rad * rad_to_deg
 
         max_def = config.TVC_MAX_DEFLECTION_DEG
-        cmd_pitch_deg = float(np.clip(cmd_pitch_deg, -max_def, max_def))
-        cmd_yaw_deg = float(np.clip(cmd_yaw_deg, -max_def, max_def))
+        if cmd_pitch_deg > max_def:
+            cmd_pitch_deg = max_def
+        elif cmd_pitch_deg < -max_def:
+            cmd_pitch_deg = -max_def
+        if cmd_yaw_deg > max_def:
+            cmd_yaw_deg = max_def
+        elif cmd_yaw_deg < -max_def:
+            cmd_yaw_deg = -max_def
 
         return TVCCommand(pitch_deg=cmd_pitch_deg, yaw_deg=cmd_yaw_deg)

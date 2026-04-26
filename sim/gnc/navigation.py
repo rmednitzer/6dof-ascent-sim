@@ -24,9 +24,12 @@ References:
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from sim import config
+from sim.core.fast_math import cross3
 from sim.core.reference_frames import quat_to_dcm
 from sim.core.state import VehicleState
 from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement
@@ -86,6 +89,11 @@ class NavigationEKF:
         self._prev_accel: np.ndarray = np.zeros(3)
         self._prev_imu_valid: bool = False
 
+        # Pre-allocated matrices re-used every predict step
+        self._F: np.ndarray = np.eye(self.N_STATES)
+        self._Q: np.ndarray = np.zeros((self.N_STATES, self.N_STATES))
+        self._I3: np.ndarray = np.eye(3)
+
     # -- public properties ---------------------------------------------------
 
     @property
@@ -100,11 +108,13 @@ class NavigationEKF:
 
     def position_uncertainty_m(self) -> float:
         """1-sigma position uncertainty: sqrt(trace(P[0:3, 0:3]))."""
-        return float(np.sqrt(np.trace(self._P[0:3, 0:3])))
+        P = self._P
+        return math.sqrt(P[0, 0] + P[1, 1] + P[2, 2])
 
     def velocity_uncertainty_ms(self) -> float:
         """1-sigma velocity uncertainty: sqrt(trace(P[3:6, 3:6]))."""
-        return float(np.sqrt(np.trace(self._P[3:6, 3:6])))
+        P = self._P
+        return math.sqrt(P[3, 3] + P[4, 4] + P[5, 5])
 
     # -- predict step --------------------------------------------------------
 
@@ -157,16 +167,16 @@ class NavigationEKF:
             dv_prev = self._prev_accel * dt
 
             # Coning correction to angular increment
-            coning_correction = (2.0 / 3.0) * np.cross(theta_prev, theta_curr)
+            coning_correction = (2.0 / 3.0) * cross3(theta_prev, theta_curr)
             theta_corrected = theta_curr + coning_correction
 
             # Sculling correction to velocity increment
-            sculling_correction = (2.0 / 3.0) * (np.cross(theta_prev, dv_curr) + np.cross(dv_prev, theta_curr))
+            sculling_correction = (2.0 / 3.0) * (cross3(theta_prev, dv_curr) + cross3(dv_prev, theta_curr))
             dv_corrected = dv_curr + sculling_correction
 
             # Rotation compensation for velocity (accounts for rotation
             # during the integration interval)
-            dv_rot_comp = 0.5 * np.cross(theta_corrected, dv_corrected)
+            dv_rot_comp = 0.5 * cross3(theta_corrected, dv_corrected)
             dv_body = dv_corrected + dv_rot_comp
         else:
             dv_body = dv_curr
@@ -194,25 +204,41 @@ class NavigationEKF:
         self._angular_velocity_body = gyro_body_corrected.copy()
 
         # -- Covariance propagation via linearised dynamics --
-        F = np.eye(self.N_STATES)
-        F[0:3, 3:6] = np.eye(3) * dt
-        F[0:3, 6:9] = -0.5 * R_body2eci * dt**2
-        F[3:6, 6:9] = -R_body2eci * dt
+        # Reuse pre-allocated F (identity) and Q (zeros); patch in the
+        # time-varying blocks in place.
+        F = self._F
+        dt_sq = dt * dt
+        # F[0:3, 3:6] = I3 * dt
+        F[0, 3] = dt
+        F[1, 4] = dt
+        F[2, 5] = dt
+        # F[0:3, 6:9] = -0.5 * R_body2eci * dt**2
+        F[0:3, 6:9] = R_body2eci * (-0.5 * dt_sq)
+        # F[3:6, 6:9] = -R_body2eci * dt
+        F[3:6, 6:9] = R_body2eci * (-dt)
 
-        # Process noise covariance Q
-        Q = np.zeros((self.N_STATES, self.N_STATES))
+        # Process noise covariance Q (populate only non-zero blocks).
+        Q = self._Q
         accel_var = config.IMU_ACCEL_NOISE_MPS2**2
         gyro_var = config.IMU_GYRO_NOISE_RADS**2
-        Q[0:3, 0:3] = np.eye(3) * accel_var * dt**4 / 4.0
-        Q[3:6, 3:6] = np.eye(3) * accel_var * dt**2
-        Q[0:3, 3:6] = np.eye(3) * accel_var * dt**3 / 2.0
-        Q[3:6, 0:3] = Q[0:3, 3:6].T
-        # Bias random walk
-        Q[6:9, 6:9] = np.eye(3) * config.IMU_ACCEL_BIAS_MPS2**2 * dt
-        Q[9:12, 9:12] = np.eye(3) * config.IMU_GYRO_BIAS_RADS**2 * dt
+        q_pos = accel_var * dt_sq * dt_sq / 4.0
+        q_vel = accel_var * dt_sq
+        q_cross = accel_var * dt_sq * dt / 2.0
+        q_bias_a = config.IMU_ACCEL_BIAS_MPS2**2 * dt
+        q_bias_g = config.IMU_GYRO_BIAS_RADS**2 * dt
         # Gyro noise contribution to velocity (via attitude error)
-        # This cross-coupling was previously missing
-        Q[3:6, 3:6] += np.eye(3) * gyro_var * float(np.dot(accel_body_corrected, accel_body_corrected)) * dt**2
+        a0, a1, a2 = accel_body_corrected
+        accel_sq = a0 * a0 + a1 * a1 + a2 * a2
+        q_vel += gyro_var * accel_sq * dt_sq
+
+        # Diagonal blocks (pos, vel, accel-bias, gyro-bias)
+        for i in range(3):
+            Q[i, i] = q_pos
+            Q[3 + i, 3 + i] = q_vel
+            Q[6 + i, 6 + i] = q_bias_a
+            Q[9 + i, 9 + i] = q_bias_g
+            Q[i, 3 + i] = q_cross
+            Q[3 + i, i] = q_cross
 
         self._P = F @ self._P @ F.T + Q
         self._P = 0.5 * (self._P + self._P.T)
@@ -264,7 +290,8 @@ class NavigationEKF:
             baro: Barometer measurement.
         """
         pos = self._x[0:3]
-        r = np.linalg.norm(pos)
+        p0, p1, p2 = pos[0], pos[1], pos[2]
+        r = math.sqrt(p0 * p0 + p1 * p1 + p2 * p2)
         if r < 1.0:
             return  # degenerate
 
@@ -312,8 +339,7 @@ class NavigationEKF:
                 return  # reject entire measurement
 
         # Kalman gain
-        S_inv = np.linalg.inv(S)
-        K = self._P @ H.T @ S_inv
+        K = np.linalg.solve(S.T, H @ self._P).T
 
         # State update
         self._x = self._x + K @ y

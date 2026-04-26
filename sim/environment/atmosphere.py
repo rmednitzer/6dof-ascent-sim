@@ -11,6 +11,7 @@ parameter to support Monte-Carlo dispersion studies.
 
 from __future__ import annotations
 
+import bisect
 import math
 from typing import NamedTuple
 
@@ -123,6 +124,9 @@ def _build_layers() -> list[_LayerData]:
 # Layers are built once at module import.
 _LAYERS: list[_LayerData] = _build_layers()
 
+#: Altitude bases for standard layers, used for binary search.
+_LAYER_ALTITUDES: list[float] = [L.h_base for L in _LAYERS]
+
 
 class AtmosphereResult(NamedTuple):
     """Atmospheric conditions at a given altitude."""
@@ -197,12 +201,9 @@ def atmosphere(altitude_m: float) -> AtmosphereResult:
 
 def _evaluate_standard_layers(altitude_m: float) -> tuple[float, float]:
     """Return (temperature_K, pressure_Pa) for 0 < altitude <= 86 km."""
-    # Find the correct layer (walk from top to bottom)
-    layer = _LAYERS[0]
-    for L in reversed(_LAYERS):
-        if altitude_m >= L.h_base:
-            layer = L
-            break
+    # Find the correct layer via binary search
+    idx = max(0, bisect.bisect_right(_LAYER_ALTITUDES, altitude_m) - 1)
+    layer = _LAYERS[idx]
 
     dh = altitude_m - layer.h_base
 
@@ -230,6 +231,9 @@ _THERMO_LAYERS: list[tuple[float, float, float, float]] = [
     (750_000.0, 3.561e-15, 100_000.0, 1000.0),  # Upper exosphere
 ]
 
+#: Altitude bases for thermospheric layers, used for binary search.
+_THERMO_ALTITUDES: list[float] = [L[0] for L in _THERMO_LAYERS]
+
 
 def _high_altitude(altitude_m: float, density_scale: float) -> AtmosphereResult:
     """Multi-layer exponential atmosphere from 86 km to 1000 km.
@@ -249,13 +253,9 @@ def _high_altitude(altitude_m: float, density_scale: float) -> AtmosphereResult:
         Jacchia, "New static models of the thermosphere and exosphere
         with empirical temperature profiles", SAO Special Report 313, 1970.
     """
-    # Find the correct layer
-    layer = _THERMO_LAYERS[0]
-    for L in _THERMO_LAYERS:
-        if altitude_m >= L[0]:
-            layer = L
-        else:
-            break
+    # Find the correct layer via binary search
+    idx = max(0, bisect.bisect_right(_THERMO_ALTITUDES, altitude_m) - 1)
+    layer = _THERMO_LAYERS[idx]
 
     h_base, rho_base, scale_h, T = layer
     dh = altitude_m - h_base
