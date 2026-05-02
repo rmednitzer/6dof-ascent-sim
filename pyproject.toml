@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "6dof-ascent-sim"
 version = "0.1.0"
 description = "6-DOF launch vehicle ascent simulation with boundary enforcement and EKF navigation"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 readme = "README.md"
 keywords = ["simulation", "6dof", "launch-vehicle", "aerospace", "gnc", "orbital-mechanics"]
