@@ -225,6 +225,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
     dt = config.DT
     num_steps = int(config.T_MAX / dt)
     current_engine = s1_engine
+    density_scale = config.ATMO_DENSITY_SCALE
 
     for step_i in range(num_steps):
         t = step_i * dt
@@ -234,7 +235,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         pos_ecef = eci_to_ecef(true_state.position_eci, t)
         lat, lon, alt_geo = ecef_to_lla(pos_ecef)
         alt_m = max(0.0, alt_geo)
-        atmo = atmosphere(alt_m)
+        atmo = atmosphere(alt_m, density_scale=density_scale)
         rho = atmo.density_kg_m3
         pressure = atmo.pressure_pa
         speed_of_sound = atmo.speed_of_sound_ms

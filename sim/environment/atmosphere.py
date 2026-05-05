@@ -144,7 +144,7 @@ class AtmosphereResult(NamedTuple):
     """Speed of sound (m/s)."""
 
 
-def atmosphere(altitude_m: float) -> AtmosphereResult:
+def atmosphere(altitude_m: float, density_scale: float | None = None) -> AtmosphereResult:
     """Evaluate the US Standard Atmosphere 1976 at a geodetic altitude.
 
     Below 0 m the sea-level values are returned (clamped).  Between 0 and
@@ -154,12 +154,15 @@ def atmosphere(altitude_m: float) -> AtmosphereResult:
 
     Args:
         altitude_m: Geodetic altitude above the WGS84 ellipsoid (m).
+        density_scale: Multiplier for air density (defaults to
+            ``config.ATMO_DENSITY_SCALE``).
 
     Returns:
         An :class:`AtmosphereResult` named tuple with density, pressure,
         temperature, and speed of sound.
     """
-    density_scale: float = config.ATMO_DENSITY_SCALE
+    if density_scale is None:
+        density_scale = config.ATMO_DENSITY_SCALE
 
     # Clamp below sea level
     if altitude_m <= 0.0:
