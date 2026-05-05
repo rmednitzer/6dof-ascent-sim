@@ -161,22 +161,6 @@ class SloshModel:
 
         return forces, torques
 
-    def total_force_n(self) -> float:
-        """Sum of current slosh forces across all tanks (N).
-
-        This is a convenience accessor; for correct results, query the
-        values returned by :meth:`update` directly (they use post-step
-        state).  This method reconstructs forces from the *current* modal
-        state, which is the post-step state if called after ``update``.
-        """
-        # Re-derive from stored state — note: requires propellant info,
-        # so we store last-computed values instead.
-        raise NotImplementedError("Use the force array returned by update() instead.")
-
-    def total_torque_nm(self) -> float:
-        """Sum of current slosh torques across all tanks (N-m)."""
-        raise NotImplementedError("Use the torque array returned by update() instead.")
-
     def pendulum_angles(self) -> np.ndarray:
         """Current pendulum angles for all tanks (rad)."""
         return self._theta.copy()
