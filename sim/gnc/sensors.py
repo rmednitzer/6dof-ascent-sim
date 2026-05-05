@@ -6,6 +6,7 @@ with realistic noise, bias, and availability constraints.
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 
 import numpy as np
@@ -78,7 +79,8 @@ class IMU:
     """
 
     def __init__(self, rng: np.random.Generator | None = None) -> None:
-        self._rng = rng if rng is not None else np.random.default_rng()
+        # Use a cryptographically secure seed if no generator is provided
+        self._rng = rng if rng is not None else np.random.default_rng(secrets.randbits(128))
         self._accel_bias: np.ndarray = np.zeros(3)
         self._gyro_bias: np.ndarray = np.zeros(3)
 
@@ -182,7 +184,8 @@ class GPS:
     COCOM_ALT_M: float = 60_000.0  # COCOM altitude limit
 
     def __init__(self, rng: np.random.Generator | None = None) -> None:
-        self._rng = rng if rng is not None else np.random.default_rng()
+        # Use a cryptographically secure seed if no generator is provided
+        self._rng = rng if rng is not None else np.random.default_rng(secrets.randbits(128))
         self._update_period_s: float = 1.0 / config.GPS_UPDATE_HZ
         self._last_update_time_s: float = -1.0
 
@@ -236,7 +239,8 @@ class Barometer:
     MAX_USEFUL_ALT_M: float = 40_000.0
 
     def __init__(self, rng: np.random.Generator | None = None) -> None:
-        self._rng = rng if rng is not None else np.random.default_rng()
+        # Use a cryptographically secure seed if no generator is provided
+        self._rng = rng if rng is not None else np.random.default_rng(secrets.randbits(128))
         self._update_period_s: float = 1.0 / config.BARO_UPDATE_HZ
         self._last_update_time_s: float = -1.0
 
@@ -291,7 +295,8 @@ class SensorSuite:
 
     def __init__(self, rng: np.random.Generator | None = None) -> None:
         if rng is None:
-            rng = np.random.default_rng()
+            # Use a cryptographically secure seed if no generator is provided
+            rng = np.random.default_rng(secrets.randbits(128))
         self.imu = IMU(rng=rng)
         self.gps = GPS(rng=rng)
         self.baro = Barometer(rng=rng)
