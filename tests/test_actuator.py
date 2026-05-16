@@ -101,13 +101,13 @@ def test_tvc_actuator_step_response():
     cmd_deg = 1.0
 
     positions = []
-    for _ in range(1000): # 1 second
+    for _ in range(1000):  # 1 second
         positions.append(actuator.update(cmd_deg, dt))
 
     # Check for overshoot (damping ratio is 0.7, so there should be slight overshoot)
     peak = max(positions)
     assert peak > 1.0
-    assert peak < 1.1 # Overshoot for zeta=0.7 is ~4.6%
+    assert peak < 1.1  # Overshoot for zeta=0.7 is ~4.6%
 
     # Check that it eventually converges to the command
     assert positions[-1] == pytest.approx(1.0, abs=1e-2)

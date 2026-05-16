@@ -17,11 +17,11 @@ INSERTION_MIN_ALTITUDE_FRAC = 0.95  # Fraction of TARGET_ALTITUDE_M
 # ---------- Earth model ----------
 EARTH_RADIUS_M = 6_378_137.0  # WGS84 semi-major axis
 EARTH_MU = 3.986004418e14  # GM (m³/s²)
-EARTH_J2 = 1.08263e-3  # J2 oblateness coefficient
-EARTH_J3 = -2.53215e-6  # J3 zonal harmonic (pear-shaped asymmetry)
-EARTH_J4 = -1.61099e-6  # J4 zonal harmonic
-EARTH_J5 = -2.27274e-7  # J5 zonal harmonic
-EARTH_J6 = 5.40682e-7  # J6 zonal harmonic
+EARTH_J2 = 1.08262668e-3  # J2 oblateness coefficient (EGM96)
+EARTH_J3 = -2.53265649e-6  # J3 zonal harmonic (pear-shaped asymmetry)
+EARTH_J4 = -1.61962159e-6  # J4 zonal harmonic
+EARTH_J5 = -2.27296083e-7  # J5 zonal harmonic
+EARTH_J6 = 5.40681239e-7  # J6 zonal harmonic
 EARTH_OMEGA = 7.2921150e-5  # Rotation rate (rad/s)
 EARTH_FLATTENING = 1.0 / 298.257223563  # WGS84 flattening
 

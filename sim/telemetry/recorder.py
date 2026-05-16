@@ -14,12 +14,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from sim.config import INTERNAL_HZ, TELEMETRY_HZ
 from sim.telemetry.schemas import MissionSummary, TelemetryFrame
+
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively replace non-finite floats with ``None``.
+
+    Stdlib ``json`` emits bare ``NaN``/``Infinity`` tokens (invalid JSON
+    that strict parsers reject). Since detecting NaN/Inf in the state is
+    the whole point of this sim, a diverging run could otherwise write
+    unparseable telemetry. Map them to JSON ``null`` instead.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_json_safe(v) for v in obj]
+    return obj
 
 
 @dataclass
@@ -128,11 +146,11 @@ class TelemetryRecorder:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # -- Serialise frame lists ----------------------------------------
-        internal_dicts = [f.to_dict() for f in self.internal_frames]
-        downlink_dicts = [f.to_dict() for f in self.downlink_frames]
+        internal_dicts = _json_safe([f.to_dict() for f in self.internal_frames])
+        downlink_dicts = _json_safe([f.to_dict() for f in self.downlink_frames])
 
-        internal_json = json.dumps(internal_dicts, indent=2)
-        downlink_json = json.dumps(downlink_dicts, indent=2)
+        internal_json = json.dumps(internal_dicts, indent=2, allow_nan=False)
+        downlink_json = json.dumps(downlink_dicts, indent=2, allow_nan=False)
 
         internal_path = self.output_dir / "telemetry_internal.json"
         downlink_path = self.output_dir / "telemetry_downlink.json"
@@ -153,7 +171,7 @@ class TelemetryRecorder:
             telemetry_hash=telemetry_hash,
         )
 
-        summary_json = json.dumps(summary.to_dict(), indent=2)
+        summary_json = json.dumps(_json_safe(summary.to_dict()), indent=2, allow_nan=False)
         summary_path.write_text(summary_json, encoding="utf-8")
 
         return summary

@@ -2,8 +2,8 @@
 
 Provides density, pressure, temperature, and speed of sound as functions of
 geodetic altitude.  Valid from sea level to 86 km using the seven standard
-lapse-rate layers; above 86 km an exponential decay approximation is used
-that brings density to effectively zero by 200 km.
+lapse-rate layers (keyed in geopotential altitude); from 86 km to 1000 km a
+piecewise-exponential thermosphere model is used, with vacuum above 1000 km.
 
 The returned density is multiplied by the ``ATMO_DENSITY_SCALE`` config
 parameter to support Monte-Carlo dispersion studies.
@@ -44,6 +44,19 @@ _RHO0: float = 1.225
 
 #: Standard gravitational acceleration used in barometric formula (m/s^2)
 _G0: float = config.G0
+
+#: Effective Earth radius for the geopotential-altitude conversion (m),
+#: per US Standard Atmosphere 1976. The lapse-rate layer table is keyed
+#: in *geopotential* altitude; the model is called with *geometric*
+#: altitude, so the two must be reconciled or a systematic bias appears
+#: (growing to a ~22% density step at the 86 km table/thermosphere seam).
+_R_GEOPOTENTIAL: float = 6_356_766.0
+
+
+def _geopotential_altitude_m(geometric_m: float) -> float:
+    """Convert geometric altitude to geopotential altitude (USSA76)."""
+    return _R_GEOPOTENTIAL * geometric_m / (_R_GEOPOTENTIAL + geometric_m)
+
 
 # ---------------------------------------------------------------------------
 # US Standard Atmosphere 1976 layer definitions (0 -- 86 km)
@@ -148,9 +161,9 @@ def atmosphere(altitude_m: float, density_scale: float | None = None) -> Atmosph
     """Evaluate the US Standard Atmosphere 1976 at a geodetic altitude.
 
     Below 0 m the sea-level values are returned (clamped).  Between 0 and
-    86 km the standard seven-layer lapse-rate model is used.  Above 86 km
-    an exponential decay approximation is applied, reaching near-zero
-    density by 200 km.
+    86 km the standard seven-layer lapse-rate model is used (evaluated in
+    geopotential altitude).  From 86 km to 1000 km a piecewise-exponential
+    thermosphere model is used; above 1000 km density is treated as zero.
 
     Args:
         altitude_m: Geodetic altitude above the WGS84 ellipsoid (m).
@@ -177,7 +190,8 @@ def atmosphere(altitude_m: float, density_scale: float | None = None) -> Atmosph
     # 0 -- 86 km: standard lapse-rate layers
     # ------------------------------------------------------------------
     if altitude_m <= _TABULATED_CEILING_M:
-        T, P = _evaluate_standard_layers(altitude_m)
+        # The lapse-rate layer table is keyed in geopotential altitude.
+        T, P = _evaluate_standard_layers(_geopotential_altitude_m(altitude_m))
         rho = P / (_R_SPECIFIC * T)
         a = math.sqrt(_GAMMA * _R_SPECIFIC * T)
         return AtmosphereResult(
@@ -203,7 +217,8 @@ def atmosphere(altitude_m: float, density_scale: float | None = None) -> Atmosph
 
 
 def _evaluate_standard_layers(altitude_m: float) -> tuple[float, float]:
-    """Return (temperature_K, pressure_Pa) for 0 < altitude <= 86 km."""
+    """Return (temperature_K, pressure_Pa) for a *geopotential* altitude
+    in the 0--86 km lapse-rate region."""
     # Find the correct layer via binary search
     idx = max(0, bisect.bisect_right(_LAYER_ALTITUDES, altitude_m) - 1)
     layer = _LAYERS[idx]

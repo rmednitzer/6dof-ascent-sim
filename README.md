@@ -1,7 +1,7 @@
 # 6-DOF Launch Vehicle Ascent Simulation
 
 [![CI](https://github.com/rmednitzer/6dof-ascent-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/rmednitzer/6dof-ascent-sim/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
@@ -69,8 +69,9 @@ This produces three files in `examples/output/`:
 
 ## Output
 
-- `output/telemetry.json` — Complete telemetry timeline
-- `output/summary.json` — Mission summary with key metrics
+- `output/telemetry_internal.json` — Internal-rate (100 Hz) telemetry timeline
+- `output/telemetry_downlink.json` — Downlink-rate telemetry timeline
+- `output/mission_summary.json` — Mission summary with key metrics and SHA-256 integrity hash
 - `output/plots/` — Trajectory visualization plots
 
 ## Configuration
