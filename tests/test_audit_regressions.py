@@ -175,6 +175,32 @@ class TestAeroAngleOfAttackSign:
         assert math.degrees(res.alpha_rad) > 90.0
 
 
+class TestGuidanceSlewLimitAntiparallel:
+    """The command slew limiter must bound even a ~180 deg flip."""
+
+    def test_antiparallel_command_flip_is_rate_limited(self):
+        from sim.gnc.guidance import GuidanceCommand, GuidanceLaw, GuidancePhase
+
+        g = GuidanceLaw()
+        # Prime the limiter with a +X command at t=0.
+        g._prev_cmd_dir = np.array([1.0, 0.0, 0.0])
+        g._prev_cmd_t = 0.0
+
+        # Next command is the exact antipode (-X): degenerate cross axis.
+        q_flip = GuidanceLaw._quaternion_aligning_thrust(np.array([-1.0, 0.0, 0.0]))
+        cmd = GuidanceCommand(q_flip, throttle=1.0, phase=GuidancePhase.TERMINAL)
+
+        out = g._slew_limit(cmd, t=config.DT)
+        out_dir = GuidanceLaw._quaternion_to_thrust_dir(out.desired_quaternion)
+        out_dir = out_dir / np.linalg.norm(out_dir)
+
+        ang = math.degrees(math.acos(np.clip(np.dot([1.0, 0.0, 0.0], out_dir), -1.0, 1.0)))
+        max_step_deg = config.GUIDANCE_MAX_CMD_RATE_DEG_S * config.DT
+        # Must be limited to ~max_step, NOT an instantaneous 180 deg jump.
+        assert ang < 5.0 * max_step_deg
+        assert ang < 90.0
+
+
 class TestSloshReactionSign:
     """Slosh reaction force must oppose the driving lateral accel."""
 

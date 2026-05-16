@@ -153,8 +153,18 @@ class GuidanceLaw:
         axis = cross3(prev, new_dir)
         axis_mag = norm3(axis)
         if axis_mag < 1e-12:
-            self._prev_cmd_dir = new_dir
-            return cmd
+            # prev and new_dir are (anti)parallel. The near-zero-angle
+            # case already returned above, so this is the ~180 deg flip:
+            # the cross product is degenerate but the command MUST still
+            # be rate-limited (an instantaneous 180 deg jump is exactly
+            # what the limiter exists to prevent). Any axis perpendicular
+            # to prev rotates toward the antipode; pick a stable one.
+            helper = np.array([1.0, 0.0, 0.0]) if abs(prev[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+            axis = cross3(prev, helper)
+            axis_mag = norm3(axis)
+            if axis_mag < 1e-12:
+                self._prev_cmd_dir = new_dir
+                return cmd
         axis /= axis_mag
         limited = (
             prev * math.cos(max_step)
