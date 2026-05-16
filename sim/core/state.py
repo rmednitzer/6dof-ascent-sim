@@ -35,13 +35,19 @@ class VehicleState:
 
         Result is memoised on the instance to amortise across the multiple
         per-step consumers (sensors, recorder, insertion check).  The cache
-        key is ``(id(position_eci), time_s)``; because ``rk4_step`` returns a
-        fresh state (and fresh position array) every integration step, any
-        genuine change automatically invalidates the cache.
+        key is content-based — the position components plus ``time_s`` — so
+        it cannot return a stale value if a different array happens to be
+        allocated at a reused ``id()`` address (the prior key used
+        ``id(position_eci)``, an aliasing hazard for coexisting states).
         """
         from sim.core.reference_frames import ecef_to_lla, eci_to_ecef
 
-        cache_key = (id(self.position_eci), self.time_s)
+        cache_key = (
+            float(self.position_eci[0]),
+            float(self.position_eci[1]),
+            float(self.position_eci[2]),
+            self.time_s,
+        )
         try:
             if self._alt_cache_key == cache_key:  # type: ignore[has-type]
                 return self._alt_cache_value  # type: ignore[has-type]

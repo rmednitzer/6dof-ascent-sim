@@ -154,9 +154,14 @@ class SloshModel:
         self._theta_dot += theta_ddot * dt
         self._theta += self._theta_dot * dt
 
-        # Force exerted by the slosh mass on the vehicle.
-        #   F = m_slosh * L * (ω²*θ + 2ζω*θ̇ )
-        forces = (m_slosh * arm) * (omega_sq * self._theta + damping * self._theta_dot)
+        # Reaction force the slosh mass exerts on the vehicle. With the
+        # EOM convention used above (base excitation enters as +a_lat/L,
+        # so θ grows in the +a_lat direction), the inertial reaction of
+        # the slosh mass *opposes* the driving lateral acceleration —
+        # hence the leading minus sign. Omitting it (the original code)
+        # makes slosh positive feedback that anti-damps the vehicle.
+        #   F = -m_slosh * L * (ω²*θ + 2ζω*θ̇ )
+        forces = -(m_slosh * arm) * (omega_sq * self._theta + damping * self._theta_dot)
         torques = forces * self._tank_offsets
 
         return forces, torques

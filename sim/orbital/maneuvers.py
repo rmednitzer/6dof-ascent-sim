@@ -156,8 +156,16 @@ def total_correction_budget(
     Returns
     -------
     float
-        Total estimated delta-v correction budget (m/s).
+        Total estimated delta-v correction budget (m/s). Returns
+        ``math.inf`` if the achieved trajectory is not a bound orbit
+        (hyperbolic/escape or sub-surface), since no finite impulsive
+        budget "corrects" a non-orbit — and the underlying vis-viva /
+        Hohmann formulas would otherwise take ``sqrt`` of a negative.
     """
+    # A non-bound or sub-surface trajectory is not correctable.
+    if not achieved.is_bound or achieved.periapsis_alt_km <= 0.0:
+        return math.inf
+
     # Current semi-major axis as reference radius for the achieved orbit
     r_achieved = achieved.semi_major_axis_m
     r_target = EARTH_RADIUS_M + target_alt_m

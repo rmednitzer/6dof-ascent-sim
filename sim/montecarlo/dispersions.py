@@ -44,9 +44,6 @@ DEFAULT_DISPERSIONS = [
     Dispersion("GPS_POS_NOISE_M", "truncated_gaussian", sigma=2.0, bounds=(1, 15)),
     # Mass
     Dispersion("S1_DRY_MASS_KG", "gaussian", sigma=222, bounds=None),
-    # Initial conditions
-    Dispersion("LAUNCH_AZIMUTH_ERR_DEG", "gaussian", sigma=0.1, bounds=None),
-    Dispersion("INITIAL_PITCH_ERR_DEG", "gaussian", sigma=0.5, bounds=None),
 ]
 
 

@@ -27,7 +27,7 @@ Systems-Theoretic Process Analysis (STPA) for the 6-DOF ascent simulation safety
 | UCA | Description | Hazard |
 |-----|-------------|--------|
 | UCA-1 | TVC commands deflection exceeding `TVC_MAX_DEFLECTION_DEG` (5 deg) | H-1, H-2 |
-| UCA-2 | TVC slew rate exceeds `TVC_MAX_SLEW_RATE_DEG_S` (10 deg/s), exciting structural flex modes | H-1, H-2 |
+| UCA-2 | TVC slew rate exceeds `TVC_MAX_SLEW_RATE_DEG_S` (20 deg/s), exciting structural flex modes | H-1, H-2 |
 | UCA-3 | TVC commands full deflection during max-Q, causing excessive lateral G | H-2 |
 | UCA-4 | Controller integrator windup produces saturated commands after sustained error | H-1 |
 
@@ -81,7 +81,7 @@ The boundary enforcer sits between the GNC outputs and the physics engine. Every
 | Minimum throttle when engine running | Clamp to `S1_THROTTLE_MIN` | `S1_THROTTLE_MIN = 0.4` |
 | No thrust on depleted propellant | Force throttle to 0 | -- |
 | TVC deflection limit | Clamp to +/- `TVC_MAX_DEFLECTION_DEG` | `TVC_MAX_DEFLECTION_DEG = 5.0` |
-| TVC slew rate limit | Rate-limit change per timestep | `TVC_MAX_SLEW_RATE_DEG_S = 10.0` |
+| TVC slew rate limit | Rate-limit change per timestep | `TVC_MAX_SLEW_RATE_DEG_S = 20.0` |
 | Staging interlock | Block separation if thrust > 5% | `THRUST_INTERLOCK_FRACTION = 0.05` |
 | Structural limits | Check axial G, lateral G, dynamic pressure against limits | `MAX_AXIAL_G`, `MAX_LATERAL_G`, `MAX_Q_PA` |
 
@@ -94,7 +94,7 @@ The FTS evaluates four independent abort criteria every timestep. If any is viol
 | Criterion | Threshold | Config Parameter |
 |-----------|-----------|------------------|
 | Cross-range deviation (below 100 km altitude) | `FTS_CROSSRANGE_LIMIT_M = 200,000 m` | `FTS_CROSSRANGE_LIMIT_M` |
-| Attitude error (angle between actual and desired quaternion) | `FTS_ATTITUDE_LIMIT_DEG = 90 deg` | `FTS_ATTITUDE_LIMIT_DEG` |
+| Thrust-axis pointing error (angle between actual and commanded body +X) | `FTS_ATTITUDE_LIMIT_DEG = 25 deg` | `FTS_ATTITUDE_LIMIT_DEG` |
 | EKF position uncertainty (largest 1-sigma eigenvalue) | `FTS_COVARIANCE_LIMIT_M = 10,000 m` | `FTS_COVARIANCE_LIMIT_M` |
 | Structural limit exceeded | Via `BoundaryEnforcer.check_structural_limits()` | `MAX_AXIAL_G`, `MAX_LATERAL_G`, `MAX_Q_PA` |
 

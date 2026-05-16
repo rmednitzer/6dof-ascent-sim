@@ -89,65 +89,28 @@ class IMU:
     def measure(
         self,
         true_state: VehicleState,
-        gravity_eci_mps2: np.ndarray,
+        specific_force_eci_mps2: np.ndarray,
         dt: float,
     ) -> IMUMeasurement:
         """Return a noisy IMU measurement at the current timestep.
 
-        The accelerometer measures *specific force* (total acceleration minus
-        gravity) in the body frame, corrupted by noise and bias.
+        A strapdown accelerometer senses *specific force* — the
+        non-gravitational acceleration (thrust + aerodynamic + structural
+        contact forces divided by mass). It does not sense gravity: in
+        free fall the accelerometer reads ~0. The sensed quantity is
+        ``f_body = R_eci->body * f_eci`` where ``f_eci = a_total - g``.
 
         Args:
             true_state: True vehicle state.
-            gravity_eci_mps2: Gravitational acceleration at the vehicle
-                position in ECI (m/s^2).
+            specific_force_eci_mps2: True non-gravitational (specific
+                force) acceleration in ECI (m/s^2) — i.e. ``(thrust +
+                aero + ...) / mass``, excluding gravity.
             dt: Simulation timestep (s).
 
         Returns:
             IMUMeasurement with noisy accel and gyro readings.
         """
-        # True specific force in ECI = total_accel - gravity
-        # We back-derive total_accel from the state by noting that
-        # the dynamics provide it.  Here we compute specific force directly
-        # as (a_total - g) and rotate to body frame.
-        # For the sensor model we receive gravity_eci_mps2 from the caller,
-        # and specific_force_eci is whatever the vehicle actually feels.
-        # In a strapdown IMU the sensed quantity is: f_body = R*(a_inertial - g)
-        # Since the dynamics propagate v_dot = g + thrust/m + aero/m,
-        # the true specific force is v_dot - g  (all in ECI).
-        # However, we don't have v_dot here, so we reconstruct from thrust/aero
-        # using the provided gravity vector.
-        # A simpler and fully equivalent approach: measure the *non-gravitational*
-        # acceleration in the body frame.  We approximate by noting the
-        # total specific force is (a - g).  The caller must supply a_total_eci
-        # *or* we compute from the derivative.  For robustness we accept
-        # gravity_eci and compute specific force = R * (0 - gravity) + true_accel_body.
-        #
-        # The cleanest approach for a sensor model: the caller provides the
-        # true specific force in ECI (or we compute it).  We'll use:
-        #   specific_force_eci = (v_dot) - gravity
-        # But we don't have v_dot stored.  Instead we note that IMU measures
-        # *specific force in body frame*.  We compute the true quantity as:
-        #   f_body = DCM * (a_total_eci - g_eci)
-        # Since a_total_eci = g_eci + thrust/m + aero/m + ..., the specific
-        # force is just thrust/m + aero/m, rotated to body.
-        #
-        # For this sensor model, we take the pragmatic approach: true specific
-        # force in body frame is computed by the caller and passed via
-        # gravity_eci_mps2.  Here we compute:
-        #   true_specific_force_body = DCM * (-gravity_eci)  [for free-fall = 0]
-        # and the caller is responsible for adding thrust+aero contributions.
-        #
-        # SIMPLIFIED: We rotate the negative gravity to body frame.  The
-        # dynamics caller should add non-gravitational terms before calling.
-        # Actually, the standard approach is:
-        #   true_accel_body = R_eci2body * (a_total_eci - g_eci)
-        # We receive gravity_eci_mps2 as the full *specific force in ECI*
-        # (poorly named parameter kept for interface compatibility).
-
-        # Compute true specific force in body frame
-        specific_force_eci = -gravity_eci_mps2  # placeholder: caller provides
-        true_accel_body = eci_to_body(specific_force_eci, true_state.quaternion)
+        true_accel_body = eci_to_body(specific_force_eci_mps2, true_state.quaternion)
 
         # True angular velocity in body frame
         true_gyro_body = true_state.angular_velocity_body.copy()
@@ -304,21 +267,21 @@ class SensorSuite:
     def update(
         self,
         true_state: VehicleState,
-        gravity_eci_mps2: np.ndarray,
+        specific_force_eci_mps2: np.ndarray,
         dt: float,
     ) -> tuple[IMUMeasurement, GPSMeasurement | None, BaroMeasurement | None]:
         """Poll every sensor and return measurements (None if unavailable).
 
         Args:
             true_state: True vehicle state from the dynamics engine.
-            gravity_eci_mps2: Gravitational acceleration in ECI at the
-                vehicle position (m/s^2).
+            specific_force_eci_mps2: True non-gravitational (specific
+                force) acceleration in ECI at the vehicle (m/s^2).
             dt: Physics timestep (s).
 
         Returns:
             Tuple of (imu, gps_or_none, baro_or_none).
         """
-        imu_meas = self.imu.measure(true_state, gravity_eci_mps2, dt)
+        imu_meas = self.imu.measure(true_state, specific_force_eci_mps2, dt)
         gps_meas = self.gps.measure(true_state, dt)
         baro_meas = self.baro.measure(true_state, dt)
         return imu_meas, gps_meas, baro_meas

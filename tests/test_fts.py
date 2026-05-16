@@ -119,14 +119,15 @@ class TestFTSAttitude:
     """FTS should trigger for excessive attitude error."""
 
     def test_attitude_violation_triggers(self):
-        """Large attitude error should trigger FTS."""
+        """A large thrust-axis pointing error should trigger FTS."""
         be = BoundaryEnforcer()
         fts = FlightTerminationSystem(be)
 
         args = _nominal_args()
-        # Create a large attitude error by making q_actual very different
-        # 180 deg rotation: q = [1, 0, 0, 0] vs desired [0, 0, 0, 1]
-        args["q_actual"] = np.array([1.0, 0.0, 0.0, 0.0])
+        # 90 deg rotation about body Z: thrust axis (+X) swings to +Y,
+        # i.e. 90 deg of thrust-axis divergence (>> 25 deg limit).
+        half = math.radians(45.0)
+        args["q_actual"] = np.array([0.0, 0.0, math.sin(half), math.cos(half)])
         args["q_desired"] = np.array([0.0, 0.0, 0.0, 1.0])
 
         triggered = fts.evaluate(**args)
@@ -134,14 +135,32 @@ class TestFTSAttitude:
         assert "Attitude" in fts.state.reason
 
     def test_small_attitude_error_no_trigger(self):
-        """Small attitude error should not trigger FTS."""
+        """Small thrust-axis error should not trigger FTS."""
         be = BoundaryEnforcer()
         fts = FlightTerminationSystem(be)
 
         args = _nominal_args()
-        # 5 degree rotation about z-axis (well under 90 deg limit)
+        # 5 degree rotation about z-axis (well under the limit)
         half_angle = math.radians(2.5)
         args["q_actual"] = np.array([0.0, 0.0, math.sin(half_angle), math.cos(half_angle)])
+
+        assert fts.evaluate(**args) is False
+
+    def test_pure_roll_about_thrust_axis_does_not_trigger(self):
+        """A large roll about the thrust axis is NOT a loss of control.
+
+        The vehicle is axisymmetric with no roll authority, so roll
+        drifts freely. The FTS attitude criterion must measure
+        thrust-axis divergence only — a 180 deg roll about +X leaves the
+        thrust axis exactly on the commanded direction and must not abort.
+        """
+        be = BoundaryEnforcer()
+        fts = FlightTerminationSystem(be)
+
+        args = _nominal_args()
+        # q = [1,0,0,0] is a 180 deg rotation about body +X (pure roll).
+        args["q_actual"] = np.array([1.0, 0.0, 0.0, 0.0])
+        args["q_desired"] = np.array([0.0, 0.0, 0.0, 1.0])
 
         assert fts.evaluate(**args) is False
 

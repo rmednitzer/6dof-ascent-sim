@@ -11,12 +11,12 @@
 ## Earth Model
 
 - **WGS84 ellipsoid** with semi-major axis 6,378,137 m and flattening 1/298.257223563 (`sim/config.py`).
-- **J2 zonal harmonic** only (`EARTH_J2 = 1.08263e-3`). No J3, J4, or tesseral harmonics. This omits ~1 m/s-scale perturbations over a typical ascent but is sufficient for LEO trajectory accuracy (`sim/environment/gravity.py`).
+- **Zonal harmonics J2–J6** (`EARTH_J2 = 1.08262668e-3` and `EARTH_J3`–`EARTH_J6`, EGM96 values). No tesseral/sectoral harmonics. Sufficient for LEO ascent trajectory accuracy (`sim/environment/gravity.py`).
 - **Constant rotation rate** `EARTH_OMEGA = 7.2921150e-5 rad/s`. No precession, nutation, or polar motion. ECI and ECEF coincide at t=0.
 
 ## Atmosphere
 
-- **US Standard Atmosphere 1976** (`sim/environment/atmosphere.py`): seven lapse-rate layers from 0 to 86 km, exponential decay approximation from 86 to 200 km (scale height 6500 m), vacuum above 200 km.
+- **US Standard Atmosphere 1976** (`sim/environment/atmosphere.py`): seven lapse-rate layers from 0 to 86 km, evaluated in geopotential altitude (geometric→geopotential conversion applied); a piecewise-exponential thermosphere model from 86 to 1000 km; vacuum above 1000 km.
 - **No latitude, season, or day/night variation**. The model is purely altitude-dependent.
 - Density is scaled by `ATMO_DENSITY_SCALE` (nominal 1.0) for Monte Carlo dispersion.
 - Speed of sound computed from ideal-gas relation with gamma = 1.4. Above 86 km, temperature is held at the 86 km value (real thermosphere heats up, but density is negligible).
@@ -56,6 +56,7 @@
   - **Propellant slosh** (`sim/dynamics/slosh.py`): Single-tank pendulum analogy. 30% of remaining propellant participates in slosh (`SLOSH_MASS_FRACTION`). Frequency interpolates with fill level. Damping ratio 0.03 (baffled tank). Semi-implicit Euler integration.
 - **No structural flexibility coupling** between flex modes and slosh.
 - **Instantaneous stage separation** (mass drop). Coast duration is 1.0 s between tail-off and separation.
+- **RK4 force hold** (`sim/main.py`): the translational forces, torques and gravity are evaluated once per 100 Hz step and held constant across the four RK4 sub-stages (only the kinematic states vary per sub-stage). Net dynamics accuracy is therefore effectively first-order within a step; the 100 Hz rate keeps the per-step error small for this trajectory but the "RK4" label refers to the kinematic integration, not the force model.
 
 ## Navigation
 
@@ -86,5 +87,5 @@
 
 ## Orbit
 
-- **Insertion criteria** (`sim/main.py`): altitude > 90% of target, velocity > 95% of target, stage >= 2, flight path angle < 5 deg. This is approximate -- real insertion would target specific orbital elements.
+- **Insertion criteria** (`sim/main.py`, `sim/orbital/propagator.py`): altitude > 95% and velocity > 97% of target, stage >= 2, flight path angle < 5 deg, **and** the osculating orbit must be bound, near-circular (e < 0.05), with periapsis above the sensible atmosphere (> 140 km). A steep sub-orbital arc therefore cannot be misreported as SUCCESS.
 - Post-insertion orbit analysis uses J2-perturbed Cowell's method (`sim/orbital/propagator.py`). No drag, solar radiation pressure, or third-body perturbations.

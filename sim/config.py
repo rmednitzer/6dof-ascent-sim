@@ -5,14 +5,23 @@ TARGET_ALTITUDE_M = 400_000  # 400 km circular LEO
 TARGET_INCLINATION_DEG = 51.6  # ISS inclination
 TARGET_VELOCITY_MS = 7_670  # Approximate circular velocity at 400 km
 
+# ---------- Orbital-insertion success criteria ----------
+# A run is only SUCCESS if the osculating orbit is a real, sustainable
+# LEO: bound (e < 1), above the sensible atmosphere, and near-circular.
+INSERTION_MIN_PERIAPSIS_ALT_M = 140_000  # Periapsis must clear the atmosphere
+INSERTION_MAX_ECCENTRICITY = 0.05  # Near-circular insertion
+INSERTION_MAX_FPA_DEG = 5.0  # Flight-path angle at insertion
+INSERTION_MIN_VELOCITY_FRAC = 0.97  # Fraction of TARGET_VELOCITY_MS
+INSERTION_MIN_ALTITUDE_FRAC = 0.95  # Fraction of TARGET_ALTITUDE_M
+
 # ---------- Earth model ----------
 EARTH_RADIUS_M = 6_378_137.0  # WGS84 semi-major axis
 EARTH_MU = 3.986004418e14  # GM (m³/s²)
-EARTH_J2 = 1.08263e-3  # J2 oblateness coefficient
-EARTH_J3 = -2.53215e-6  # J3 zonal harmonic (pear-shaped asymmetry)
-EARTH_J4 = -1.61099e-6  # J4 zonal harmonic
-EARTH_J5 = -2.27274e-7  # J5 zonal harmonic
-EARTH_J6 = 5.40682e-7  # J6 zonal harmonic
+EARTH_J2 = 1.08262668e-3  # J2 oblateness coefficient (EGM96)
+EARTH_J3 = -2.53265649e-6  # J3 zonal harmonic (pear-shaped asymmetry)
+EARTH_J4 = -1.61962159e-6  # J4 zonal harmonic
+EARTH_J5 = -2.27296083e-7  # J5 zonal harmonic
+EARTH_J6 = 5.40681239e-7  # J6 zonal harmonic
 EARTH_OMEGA = 7.2921150e-5  # Rotation rate (rad/s)
 EARTH_FLATTENING = 1.0 / 298.257223563  # WGS84 flattening
 
@@ -87,7 +96,12 @@ EKF_RESIDUAL_SIGMA_THRESHOLD = 3.0  # Innovation gate (sigma)
 
 # ---------- FTS abort criteria ----------
 FTS_CROSSRANGE_LIMIT_M = 200_000  # Max cross-range deviation
-FTS_ATTITUDE_LIMIT_DEG = 90.0  # Max attitude error (deg)
+# Max thrust-axis pointing error before FTS abort. This is now a
+# genuine loss-of-control threshold (see FTS._compute_attitude_error,
+# which measures thrust-axis divergence, not the uncontrolled roll).
+# Nominal flight tracks to <5 deg, so 25 deg is protective without
+# false-tripping. The old 90 deg never tripped before total loss.
+FTS_ATTITUDE_LIMIT_DEG = 25.0  # Max thrust-axis pointing error (deg)
 FTS_COVARIANCE_LIMIT_M = 10_000  # Max EKF position uncertainty
 
 # ---------- Flex body — first 3 lateral bending modes ----------
@@ -122,6 +136,11 @@ WIND_GUST_SIGMA_MS = 5.0  # Gust standard deviation
 PITCH_KICK_DEG = 3.0  # Initial pitch-over angle
 PITCH_KICK_TIME_S = 7.0  # Time to initiate gravity turn
 VERTICAL_RISE_TIME_S = 7.0  # Duration of vertical rise phase
+# Slew-rate limit on the commanded thrust direction. PEG can otherwise
+# emit a jittery, physically-unrealisable attitude command (faster than
+# the +/-5 deg TVC can track), inflating apparent attitude error. This
+# keeps the command trackable so the FTS attitude check is meaningful.
+GUIDANCE_MAX_CMD_RATE_DEG_S = 8.0
 
 # ---------- Control gains ----------
 # Baseline gains at reference condition (q=10kPa, full mass)

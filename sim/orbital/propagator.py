@@ -41,6 +41,28 @@ class OrbitalElements:
     apoapsis_alt_km: float
     periapsis_alt_km: float
 
+    @property
+    def is_bound(self) -> bool:
+        """True for an elliptical (captured) orbit: e < 1 and a > 0."""
+        return self.eccentricity < 1.0 and self.semi_major_axis_m > 0.0
+
+    def is_sustainable_leo(
+        self,
+        min_periapsis_alt_m: float,
+        max_eccentricity: float,
+    ) -> bool:
+        """True if this is a real, sustainable low-Earth orbit.
+
+        Rejects sub-surface / negative-periapsis, hyperbolic/escape, and
+        excessively eccentric trajectories that would be misreported as a
+        successful insertion.
+        """
+        if not self.is_bound:
+            return False
+        if self.periapsis_alt_km * 1000.0 < min_periapsis_alt_m:
+            return False
+        return self.eccentricity <= max_eccentricity
+
 
 class OrbitPropagator:
     """Propagates a post-insertion orbit with optional J2 perturbation.

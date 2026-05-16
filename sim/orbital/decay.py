@@ -250,19 +250,16 @@ def estimate_lifetime(
             # Very high eccentricity — the exponential terms dominate
             da_per_rev = -2.0 * math.pi * (a**2 / bc) * rho_p / math.sqrt(2.0 * math.pi * eaH)
 
-        # Eccentricity change per orbit (King-Hele, first order)
-        if eaH < 50.0 and eaH > 0.01:
-            if eaH < 2.0:
-                bessel_i1 = eaH / 2.0 * (1.0 + eaH**2 / 8.0 + eaH**4 / 192.0)
-            else:
-                bessel_i1 = math.exp(eaH) / math.sqrt(2.0 * math.pi * eaH)
-
-            de_per_rev = -(1.0 - e) * da_per_rev / a - (
-                2.0 * math.pi * rho_p * a / bc * math.exp(-eaH) * (bessel_i1 - bessel_factor)
-            )
+        # Eccentricity change per orbit. Periapsis-concentrated drag
+        # contracts the orbit and circularises it: both a and e decrease.
+        # The first-order King-Hele coupling is de/rev ~ (1-e)*da/rev / a;
+        # with da/rev < 0 this is correctly negative. (The previous code
+        # had an extra leading minus plus an ad-hoc I1-vs-I0 term, which
+        # made eccentricity *grow* under drag — physically backwards.)
+        if a > 0.0:
+            de_per_rev = (1.0 - e) * da_per_rev / a
         else:
-            # Approximate: eccentricity decays proportionally to a
-            de_per_rev = -e * abs(da_per_rev) / a if a > 0 else 0.0
+            de_per_rev = 0.0
 
         # Adaptive stepping: take multiple orbits at once when decay is slow
         if abs(da_per_rev) > 1e-12:

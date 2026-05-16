@@ -122,6 +122,49 @@ def _apply_overrides(overrides: dict | None) -> dict:
     return overrides
 
 
+def _is_orbital_insertion(state: VehicleState, stage_index: int):
+    """Return ``(True, elements)`` iff *state* is a real LEO insertion.
+
+    A genuine insertion requires the upper stage to be active
+    (``stage_index >= 1``, i.e. stage 2), near-target altitude/velocity,
+    a small flight-path angle, and — decisively — an osculating orbit
+    that is bound, clears the sensible atmosphere, and is near-circular.
+    The final orbit test is what prevents a steep sub-orbital arc
+    (negative periapsis) from being misreported as SUCCESS. Keeping the
+    stage gate inside this single predicate ensures the in-loop and
+    end-of-sim paths apply an identical criterion.
+
+    Returns ``(False, None)`` otherwise.
+    """
+    from sim.orbital.propagator import OrbitPropagator
+
+    if stage_index < 1:
+        return False, None
+
+    alt_m = state.altitude_m()
+    vel = state.velocity_mag_ms()
+    if alt_m < config.INSERTION_MIN_ALTITUDE_FRAC * config.TARGET_ALTITUDE_M:
+        return False, None
+    if vel < config.INSERTION_MIN_VELOCITY_FRAC * config.TARGET_VELOCITY_MS:
+        return False, None
+    r = norm3(state.position_eci)
+    if r < 1.0 or vel < 1.0:
+        return False, None
+    r_hat = state.position_eci / r
+    v_hat = state.velocity_eci / vel
+    fpa_deg = abs(math.degrees(math.asin(np.clip(dot3(r_hat, v_hat), -1.0, 1.0))))
+    if fpa_deg > config.INSERTION_MAX_FPA_DEG:
+        return False, None
+
+    elements = OrbitPropagator(state).state_to_elements()
+    if not elements.is_sustainable_leo(
+        config.INSERTION_MIN_PERIAPSIS_ALT_M,
+        config.INSERTION_MAX_ECCENTRICITY,
+    ):
+        return False, None
+    return True, elements
+
+
 def run_simulation(
     config_override: dict | None = None,
     quiet: bool = False,
@@ -220,12 +263,17 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
     peak_axial_g = 0.0
     peak_ekf_uncertainty = 0.0
     last_print_time = -10.0
-    _sensor_degradation_count = 0  # noqa: F841
 
     dt = config.DT
     num_steps = int(config.T_MAX / dt)
     current_engine = s1_engine
     density_scale = config.ATMO_DENSITY_SCALE
+
+    # Non-gravitational (specific-force) acceleration in ECI from the
+    # previous step, fed to the IMU this step. A strapdown accelerometer
+    # senses (thrust + aero + ...) / m, never gravity. The one-step
+    # (~10 ms) lag is realistic IMU latency and well within EKF tolerance.
+    prev_specific_force_eci = np.zeros(3)
 
     for step_i in range(num_steps):
         t = step_i * dt
@@ -285,10 +333,24 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         # Set throttle on engine
         current_engine.set_throttle(approved_throttle)
         thrust_n, mdot = current_engine.update(dt, pressure)
-        # Zero thrust/mdot if propellant depleted (engine model doesn't track propellant)
-        if vehicle.propellant_remaining() <= 0.0:
-            thrust_n = 0.0
-            mdot = 0.0
+        # The engine model does not track propellant; the vehicle ledger
+        # does. If this step would burn more than remains, the engine can
+        # only fire for the fraction of the step the propellant lasts.
+        # Scale BOTH thrust and mass flow by that fraction so specific
+        # impulse stays physical — applying full thrust while capping only
+        # the mass burned would be a spurious delta-v boost on the
+        # depletion tick (and could shift stage-end insertion outcomes).
+        propellant_avail = vehicle.propellant_remaining()
+        if mdot > 0.0:
+            if propellant_avail <= 0.0:
+                thrust_n = 0.0
+                mdot = 0.0
+            else:
+                step_demand = mdot * dt
+                if step_demand > propellant_avail:
+                    burn_frac = propellant_avail / step_demand
+                    thrust_n *= burn_frac
+                    mdot *= burn_frac
 
         # --- Control (gain-scheduled) ---
         tvc_cmd = controller.update(
@@ -318,7 +380,8 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         enforcer.check_structural_limits(axial_g, lateral_g, q_pa)
 
         # --- Sensor measurements ---
-        imu_meas, gps_meas, baro_meas = sensors.update(true_state, grav_eci, dt)
+        # IMU senses specific force (non-gravitational accel), not gravity.
+        imu_meas, gps_meas, baro_meas = sensors.update(true_state, prev_specific_force_eci, dt)
 
         # --- Navigation (EKF) ---
         # EKF uses the raw IMU measurement (without flex body contamination)
@@ -463,8 +526,17 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         I_prop = prop_mass * (radius**2 / 4.0 + tank_length**2 / 12.0)
         inertia = max(100.0, I_dry + I_prop)
 
-        # Mass flow
-        actual_mdot = -mdot if vehicle.propellant_remaining() > 0 else 0.0
+        # Mass flow — single source of truth. Never integrate away more
+        # propellant than the vehicle actually has, so the RK4 state mass
+        # and the vehicle propellant ledger cannot diverge (which would
+        # let mass_kg fall below dry mass and inflate acceleration).
+        propellant_avail = vehicle.propellant_remaining()
+        mass_consumed = min(mdot * dt, propellant_avail) if mdot > 0.0 else 0.0
+        actual_mdot = -mass_consumed / dt if dt > 0.0 else 0.0
+
+        # Non-gravitational specific force this step (for next step's IMU).
+        total_force_eci = thrust_eci + aero_result.drag_force_eci + aero_normal_eci + slosh_force_eci
+        prev_specific_force_eci = total_force_eci / max(true_state.mass_kg, 1.0)
 
         # Create derivatives closure
         _thrust_eci = thrust_eci
@@ -495,9 +567,9 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
 
         true_state = rk4_step(true_state, derivatives_fn, dt)
 
-        # Update vehicle mass tracking
-        if mdot > 0:
-            vehicle.consume_propellant(mdot * dt)
+        # Update vehicle mass tracking (same amount removed from RK4 state)
+        if mass_consumed > 0.0:
+            vehicle.consume_propellant(mass_consumed)
 
         # --- Telemetry ---
         sim_context = {
@@ -529,28 +601,20 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
                 f"q={q_pa / 1000:5.1f} kPa | stg={vehicle.stage_index + 1}"
             )
 
-        # --- Insertion check ---
-        alt_km = true_state.altitude_m() / 1000
-        vel = true_state.velocity_mag_ms()
-        if (
-            alt_km > config.TARGET_ALTITUDE_M / 1000 * 0.90
-            and vel > config.TARGET_VELOCITY_MS * 0.92
-            and vehicle.stage_index >= 1
-        ):
-            r_hat = true_state.position_eci / max(norm3(true_state.position_eci), 1.0)
-            v_hat = true_state.velocity_eci / max(vel, 1.0)
-            fpa = math.asin(np.clip(dot3(r_hat, v_hat), -1.0, 1.0))
-            if abs(math.degrees(fpa)) < 15.0:
-                outcome = "SUCCESS"
-                if not quiet:
-                    print(f"  ORBITAL INSERTION at t={t:.1f}s!")
-                break
+        # --- Insertion check: SUCCESS only for a genuine, sustainable orbit ---
+        inserted, _ = _is_orbital_insertion(true_state, vehicle.stage_index)
+        if inserted:
+            outcome = "SUCCESS"
+            if not quiet:
+                print(f"  ORBITAL INSERTION at t={t:.1f}s!")
+            break
 
-    # End-of-sim fallback check
+    # End-of-sim check — apply the identical orbit-validity test (same
+    # predicate, including the stage gate). A run that times out is only
+    # SUCCESS if it actually reached orbit.
     if outcome == "TIMEOUT":
-        alt_km = true_state.altitude_m() / 1000
-        vel = true_state.velocity_mag_ms()
-        if alt_km > 200 and vel > 7000:
+        inserted, _ = _is_orbital_insertion(true_state, vehicle.stage_index)
+        if inserted:
             outcome = "SUCCESS"
 
     # Compute flight path angle

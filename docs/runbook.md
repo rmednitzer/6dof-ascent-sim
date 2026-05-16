@@ -126,11 +126,11 @@ Parameters can be overridden at runtime via the `config_override` dict passed to
 
 | Outcome | Meaning | Exit Code |
 |---------|---------|-----------|
-| `SUCCESS` | Orbital insertion achieved (altitude > 90% target, velocity > 95% target, FPA < 5 deg, stage >= 2) | 0 |
-| `FTS_ABORT` | Flight Termination System triggered (crossrange, attitude, EKF uncertainty, or structural limit violated) | 1 |
+| `SUCCESS` | Orbital insertion achieved: altitude > 95% target, velocity > 97% target, FPA < 5 deg, stage >= 2, **and** a bound near-circular orbit (e < 0.05) with periapsis > 140 km | 0 |
+| `FTS_ABORT` | Flight Termination System triggered (crossrange, thrust-axis attitude, EKF uncertainty, or structural limit violated) | 1 |
 | `TIMEOUT` | Simulation reached `T_MAX` (600 s) without insertion or FTS trigger | 2 |
 
-A `TIMEOUT` outcome is automatically upgraded to `SUCCESS` if the vehicle has altitude > 200 km and velocity > 7000 m/s at the end.
+At end of run a `TIMEOUT` is reclassified `SUCCESS` only if the state passes the identical orbit-validity test above (a real, sustainable orbit) — not merely an altitude/velocity threshold.
 
 ### Mission Summary Fields
 

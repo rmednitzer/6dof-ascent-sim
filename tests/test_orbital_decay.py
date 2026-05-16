@@ -139,7 +139,7 @@ def test_estimate_lifetime_output_format():
     }
     for key in expected_keys:
         assert key in result
-        assert isinstance(result[key], (float, int))
+        assert isinstance(result[key], float | int)
 
 
 def test_estimate_lifetime_low_circular():
