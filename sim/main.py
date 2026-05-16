@@ -333,10 +333,24 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         # Set throttle on engine
         current_engine.set_throttle(approved_throttle)
         thrust_n, mdot = current_engine.update(dt, pressure)
-        # Zero thrust/mdot if propellant depleted (engine model doesn't track propellant)
-        if vehicle.propellant_remaining() <= 0.0:
-            thrust_n = 0.0
-            mdot = 0.0
+        # The engine model does not track propellant; the vehicle ledger
+        # does. If this step would burn more than remains, the engine can
+        # only fire for the fraction of the step the propellant lasts.
+        # Scale BOTH thrust and mass flow by that fraction so specific
+        # impulse stays physical — applying full thrust while capping only
+        # the mass burned would be a spurious delta-v boost on the
+        # depletion tick (and could shift stage-end insertion outcomes).
+        propellant_avail = vehicle.propellant_remaining()
+        if mdot > 0.0:
+            if propellant_avail <= 0.0:
+                thrust_n = 0.0
+                mdot = 0.0
+            else:
+                step_demand = mdot * dt
+                if step_demand > propellant_avail:
+                    burn_frac = propellant_avail / step_demand
+                    thrust_n *= burn_frac
+                    mdot *= burn_frac
 
         # --- Control (gain-scheduled) ---
         tvc_cmd = controller.update(
