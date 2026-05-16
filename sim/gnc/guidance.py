@@ -76,6 +76,10 @@ class GuidanceLaw:
         self._peg_last_update_t = -10.0
         self._peg_update_interval = 2.0  # Update PEG every 2 seconds
 
+        # Commanded-direction slew limiter state
+        self._prev_cmd_dir: np.ndarray | None = None
+        self._prev_cmd_t: float | None = None
+
     def update(self, state: VehicleState) -> GuidanceCommand:
         """Compute guidance command for the current state."""
         t = state.time_s
@@ -86,10 +90,10 @@ class GuidanceLaw:
 
         if t < config.VERTICAL_RISE_TIME_S:
             self._phase = GuidancePhase.VERTICAL_RISE
-            return self._vertical_rise(state)
+            cmd = self._vertical_rise(state)
         elif t < peg_start:
             self._phase = GuidancePhase.GRAVITY_TURN
-            return self._gravity_turn(state)
+            cmd = self._gravity_turn(state)
         elif t < peg_start + blend_duration:
             # Smooth blend from gravity turn to PEG
             self._phase = GuidancePhase.TERMINAL
@@ -104,10 +108,68 @@ class GuidanceLaw:
             if norm > 1e-10:
                 blended_dir /= norm
             q_des = self._quaternion_aligning_thrust(blended_dir)
-            return GuidanceCommand(q_des, throttle=1.0, phase=GuidancePhase.TERMINAL)
+            cmd = GuidanceCommand(q_des, throttle=1.0, phase=GuidancePhase.TERMINAL)
         else:
             self._phase = GuidancePhase.TERMINAL
-            return self._terminal_guidance_peg(state)
+            cmd = self._terminal_guidance_peg(state)
+
+        return self._slew_limit(cmd, t)
+
+    def _slew_limit(self, cmd: GuidanceCommand, t: float) -> GuidanceCommand:
+        """Rate-limit the commanded thrust direction.
+
+        Bounds the angular change of the commanded thrust axis to
+        ``GUIDANCE_MAX_CMD_RATE_DEG_S`` so the attitude command stays
+        physically trackable by the TVC. Without this, PEG can emit a
+        step/jittery command that the actuator cannot follow, producing
+        a large (spurious) actual-vs-commanded attitude error.
+        """
+        new_dir = self._quaternion_to_thrust_dir(cmd.desired_quaternion)
+        n = norm3(new_dir)
+        if n > 1e-10:
+            new_dir = new_dir / n
+
+        if self._prev_cmd_dir is None or self._prev_cmd_t is None:
+            self._prev_cmd_dir = new_dir
+            self._prev_cmd_t = t
+            return cmd
+
+        dt = t - self._prev_cmd_t
+        self._prev_cmd_t = t
+        if dt <= 0.0:
+            self._prev_cmd_dir = new_dir
+            return cmd
+
+        prev = self._prev_cmd_dir
+        cos_ang = float(np.clip(dot3(prev, new_dir), -1.0, 1.0))
+        angle = math.acos(cos_ang)
+        max_step = math.radians(config.GUIDANCE_MAX_CMD_RATE_DEG_S) * dt
+
+        if angle <= max_step or angle < 1e-9:
+            self._prev_cmd_dir = new_dir
+            return cmd
+
+        # Rotate `prev` toward `new_dir` by exactly max_step (vector slerp).
+        axis = cross3(prev, new_dir)
+        axis_mag = norm3(axis)
+        if axis_mag < 1e-12:
+            self._prev_cmd_dir = new_dir
+            return cmd
+        axis /= axis_mag
+        limited = (
+            prev * math.cos(max_step)
+            + cross3(axis, prev) * math.sin(max_step)
+            + axis * dot3(axis, prev) * (1.0 - math.cos(max_step))
+        )
+        lm = norm3(limited)
+        if lm > 1e-10:
+            limited /= lm
+        self._prev_cmd_dir = limited
+        return GuidanceCommand(
+            self._quaternion_aligning_thrust(limited),
+            throttle=cmd.throttle,
+            phase=cmd.phase,
+        )
 
     @property
     def phase(self) -> GuidancePhase:
@@ -120,7 +182,9 @@ class GuidanceLaw:
         return GuidanceCommand(q_des, throttle=1.0, phase=GuidancePhase.VERTICAL_RISE)
 
     def _gravity_turn(self, state: VehicleState) -> GuidanceCommand:
-        """Gravity turn: programmed pitch schedule blended with velocity tracking."""
+        """Gravity turn: thrust tracks the Earth-relative velocity vector
+        (near-zero angle of attack), with the programmed pitch schedule
+        acting only as an upper bound on pitch-over rate."""
         t = state.time_s
         up = self._local_up(state)
 
@@ -175,10 +239,12 @@ class GuidanceLaw:
             else:
                 vel_pitch_from_vert = math.radians(config.PITCH_KICK_DEG)
 
-            if fraction < 0.3:
-                pitch_from_vert = min(programmed_pitch_rad, vel_pitch_from_vert)
-            else:
-                pitch_from_vert = programmed_pitch_rad
+            # True gravity turn: follow the Earth-relative velocity vector
+            # (zero AoA). The programmed schedule is only a ceiling so the
+            # vehicle can never pitch over faster than the schedule allows
+            # — it must not be flown open-loop (the old `else` branch did,
+            # which lofted the trajectory and drove large AoA/lateral-G).
+            pitch_from_vert = min(programmed_pitch_rad, vel_pitch_from_vert)
 
             desired_dir = up * math.cos(pitch_from_vert) + downrange * math.sin(pitch_from_vert)
             desired_dir /= norm3(desired_dir)
@@ -250,25 +316,17 @@ class GuidanceLaw:
             )
 
         # --- Compute steering direction from linear tangent law ---
-        # Time since PEG was last updated; A and B define the steering
-        # f_r = sin(theta) where theta = atan(A + B*tau), tau measured from last update
-        tau = 0.0  # At the update point
+        # f_r(tau) = A + B*tau, with tau the time elapsed since the PEG
+        # coefficients were last solved. Using tau=0 (the old code) made
+        # B inert and degenerated PEG to a constant-pitch hold.
+        tau = max(0.0, t - self._peg_last_update_t)
         f_r = self._peg_A + self._peg_B * tau
 
-        # Clamp radial fraction — most thrust should go toward orbital velocity.
-        # Once above target altitude, allow stronger downward steering to shed altitude.
-        if r > target_r:
-            # Above target: bias toward horizontal/down
-            if f_r < -0.5:
-                f_r = -0.5
-            elif f_r > 0.1:
-                f_r = 0.1
-        else:
-            # Below target: allow some climb
-            if f_r < -0.3:
-                f_r = -0.3
-            elif f_r > 0.4:
-                f_r = 0.4
+        # Safety clamp only: f_r is a direction cosine, |f_r| < 1 so that
+        # f_h = sqrt(1 - f_r^2) is real. Do NOT clamp tighter than this —
+        # the PEG solve owns the radial/horizontal split; clamping it to a
+        # narrow band (as the old code did) discards the guidance solution.
+        f_r = float(np.clip(f_r, -0.95, 0.95))
         f_h = math.sqrt(max(0.0, 1.0 - f_r * f_r))
 
         desired_dir = r_hat * f_r + t_hat * f_h

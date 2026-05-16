@@ -274,7 +274,10 @@ class AerodynamicsModel:
             cos_alpha = 1.0
         elif cos_alpha < -1.0:
             cos_alpha = -1.0
-        alpha = math.acos(abs(cos_alpha))
+        # Full [0, pi] range. The previous abs() folded backward flight
+        # (cos_alpha < 0, AoA > 90deg) into [0, 90deg], understating AoA
+        # and normal force exactly when the vehicle is tumbling/aborting.
+        alpha = math.acos(cos_alpha)
 
         # Normal force direction: component of velocity perpendicular to body X
         # in the body frame

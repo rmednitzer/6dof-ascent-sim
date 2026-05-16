@@ -20,6 +20,7 @@ from sim.config import (
     FTS_CROSSRANGE_LIMIT_M,
 )
 from sim.core.fast_math import max_sigma_3x3
+from sim.core.reference_frames import body_to_eci
 from sim.safety.boundary_enforcer import BoundaryEnforcer, BoundaryResult
 
 
@@ -170,20 +171,31 @@ class FlightTerminationSystem:
         q_actual: np.ndarray,
         q_desired: np.ndarray,
     ) -> float:
-        """Angle (degrees) between two unit quaternions [x, y, z, w].
+        """Thrust-axis pointing error (degrees) — the angle between the
+        commanded and actual body +X (thrust) axes in ECI.
 
-        Uses the inner-product formula:
-            theta = 2 * arccos(|q_actual . q_desired|)
+        The previous implementation used the full 4-component quaternion
+        inner product, which also counts rotation *about* the thrust
+        axis (roll). This vehicle is axisymmetric with no roll control,
+        so roll drifts freely — making the full-quaternion error grow to
+        ~60 deg in benign flight while the thrust axis tracks to <5 deg.
+        An FTS divergence monitor must track the loss-of-control
+        quantity (where thrust points), not the irrelevant roll, so a
+        tight, genuinely protective limit is meaningful.
         """
-        dot = abs(
-            q_actual[0] * q_desired[0]
-            + q_actual[1] * q_desired[1]
-            + q_actual[2] * q_desired[2]
-            + q_actual[3] * q_desired[3]
-        )
-        if dot > 1.0:
-            dot = 1.0
-        return math.degrees(2.0 * math.acos(dot))
+        body_x = np.array([1.0, 0.0, 0.0])
+        a = body_to_eci(body_x, q_actual)
+        d = body_to_eci(body_x, q_desired)
+        na = math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2])
+        nd = math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
+        if na < 1e-12 or nd < 1e-12:
+            return 0.0
+        cos_ang = (a[0] * d[0] + a[1] * d[1] + a[2] * d[2]) / (na * nd)
+        if cos_ang > 1.0:
+            cos_ang = 1.0
+        elif cos_ang < -1.0:
+            cos_ang = -1.0
+        return math.degrees(math.acos(cos_ang))
 
     @staticmethod
     def _compute_position_uncertainty(cov: np.ndarray) -> float:
