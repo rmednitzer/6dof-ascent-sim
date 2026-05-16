@@ -122,18 +122,24 @@ def _apply_overrides(overrides: dict | None) -> dict:
     return overrides
 
 
-def _is_orbital_insertion(state: VehicleState):
+def _is_orbital_insertion(state: VehicleState, stage_index: int):
     """Return ``(True, elements)`` iff *state* is a real LEO insertion.
 
-    A genuine insertion requires near-target altitude/velocity and a
-    small flight-path angle, and — decisively — an osculating orbit that
-    is bound, clears the sensible atmosphere, and is near-circular. The
-    final orbit test is what prevents a steep sub-orbital arc (negative
-    periapsis) from being misreported as SUCCESS.
+    A genuine insertion requires the upper stage to be active
+    (``stage_index >= 1``, i.e. stage 2), near-target altitude/velocity,
+    a small flight-path angle, and — decisively — an osculating orbit
+    that is bound, clears the sensible atmosphere, and is near-circular.
+    The final orbit test is what prevents a steep sub-orbital arc
+    (negative periapsis) from being misreported as SUCCESS. Keeping the
+    stage gate inside this single predicate ensures the in-loop and
+    end-of-sim paths apply an identical criterion.
 
     Returns ``(False, None)`` otherwise.
     """
     from sim.orbital.propagator import OrbitPropagator
+
+    if stage_index < 1:
+        return False, None
 
     alt_m = state.altitude_m()
     vel = state.velocity_mag_ms()
@@ -582,18 +588,18 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             )
 
         # --- Insertion check: SUCCESS only for a genuine, sustainable orbit ---
-        if vehicle.stage_index >= 1:
-            inserted, _ = _is_orbital_insertion(true_state)
-            if inserted:
-                outcome = "SUCCESS"
-                if not quiet:
-                    print(f"  ORBITAL INSERTION at t={t:.1f}s!")
-                break
+        inserted, _ = _is_orbital_insertion(true_state, vehicle.stage_index)
+        if inserted:
+            outcome = "SUCCESS"
+            if not quiet:
+                print(f"  ORBITAL INSERTION at t={t:.1f}s!")
+            break
 
-    # End-of-sim check — apply the identical orbit-validity test. A run
-    # that times out is only SUCCESS if it actually reached orbit.
+    # End-of-sim check — apply the identical orbit-validity test (same
+    # predicate, including the stage gate). A run that times out is only
+    # SUCCESS if it actually reached orbit.
     if outcome == "TIMEOUT":
-        inserted, _ = _is_orbital_insertion(true_state)
+        inserted, _ = _is_orbital_insertion(true_state, vehicle.stage_index)
         if inserted:
             outcome = "SUCCESS"
 

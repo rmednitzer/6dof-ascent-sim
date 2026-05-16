@@ -40,11 +40,19 @@ class TestOrbitalInsertionCriterion:
     """The SUCCESS gate must validate a real orbit, not just alt/vel."""
 
     def test_clean_circular_orbit_is_insertion(self):
-        ok, elements = _is_orbital_insertion(_circular_leo_state())
+        ok, elements = _is_orbital_insertion(_circular_leo_state(), stage_index=1)
         assert ok is True
         assert elements is not None
         assert elements.eccentricity < config.INSERTION_MAX_ECCENTRICITY
         assert elements.periapsis_alt_km * 1000.0 > config.INSERTION_MIN_PERIAPSIS_ALT_M
+
+    def test_stage_gate_blocks_insertion_on_first_stage(self):
+        """Even a perfect orbit is not SUCCESS while on stage 1, and the
+        gate lives in the single predicate so the in-loop and end-of-sim
+        paths cannot disagree."""
+        ok, elements = _is_orbital_insertion(_circular_leo_state(), stage_index=0)
+        assert ok is False
+        assert elements is None
 
     def test_suborbital_arc_is_not_insertion(self):
         """The original bug: high altitude but sub-orbital -> NOT SUCCESS.
@@ -68,7 +76,7 @@ class TestOrbitalInsertionCriterion:
             mass_kg=10_000.0,
             time_s=500.0,
         )
-        ok, _ = _is_orbital_insertion(state)
+        ok, _ = _is_orbital_insertion(state, stage_index=1)
         assert ok is False
 
         # And the orbit it implies is genuinely not sustainable.
