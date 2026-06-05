@@ -126,4 +126,3 @@ Continuous multi-channel assessment with four severity levels: NOMINAL, WARNING,
 | **Propellant depletion guard** | UCA-8, CS-8 | Boundary enforcer forces throttle to 0 when propellant remaining <= 0 |
 | **Latching FTS** | H-1 through H-4 | Once triggered, FTS cannot be reset. Simulation terminates with `FTS_ABORT` outcome |
 | **NaN/Inf guard** | All | Integrator checks all state components for NaN/Inf after each RK4 step, raises `RuntimeError` on detection |
-
