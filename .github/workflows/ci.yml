@@ -25,7 +25,7 @@ jobs:
       - name: Install ruff
         # Pinned to match .pre-commit-config.yaml so local pre-commit and
         # CI never disagree on lint/format rules.
-        run: pip install "ruff==0.9.7"
+        run: pip install "ruff==0.15.16"
       - name: Ruff check
         run: ruff check .
       - name: Ruff format check
