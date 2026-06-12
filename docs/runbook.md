@@ -110,7 +110,7 @@ All simulation parameters live in `sim/config.py`. Key parameter groups:
 - **Stage 1/2**: Mass, thrust, Isp, burn time for each stage
 - **Aerodynamics**: `CD_TABLE_MACH`, `CD_TABLE_VALUE`, `REFERENCE_AREA_M2`
 - **Structural limits**: `MAX_Q_PA` (35 kPa), `MAX_AXIAL_G` (6.0), `MAX_LATERAL_G` (0.5)
-- **TVC limits**: `TVC_MAX_DEFLECTION_DEG` (5.0), `TVC_MAX_SLEW_RATE_DEG_S` (10.0)
+- **TVC limits**: `TVC_MAX_DEFLECTION_DEG` (5.0), `TVC_MAX_SLEW_RATE_DEG_S` (20.0)
 - **EKF/Sensors**: Noise levels, bias instabilities, update rates, innovation gate threshold
 - **FTS**: `FTS_CROSSRANGE_LIMIT_M`, `FTS_ATTITUDE_LIMIT_DEG`, `FTS_COVARIANCE_LIMIT_M`
 - **Flex/Slosh**: Mode frequencies, damping ratios, enable flags

@@ -29,6 +29,6 @@ Security concerns relevant to this project include:
 - **Numerical stability**: Malformed inputs could cause NaN/Inf propagation
   (mitigated by guards in `sim/core/integrator.py`).
 - **Dependency vulnerabilities**: Third-party packages (NumPy, SciPy) may
-  contain vulnerabilities. Run `pip audit` periodically.
+  contain vulnerabilities. Run `pip-audit` periodically (`pip install pip-audit`).
 - **Export control awareness**: Do not add classified or export-controlled
   parameters to this repository.
