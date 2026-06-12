@@ -140,6 +140,17 @@ class HealthMonitor:
             )
         )
 
+    @property
+    def status(self) -> str:
+        """Worst health across all channels as a JSON-friendly string.
+
+        This is the interface the telemetry recorder consumes
+        (``getattr(health_monitor, "status", ...)``). Returns one of
+        ``"NOMINAL"``, ``"WARNING"``, ``"ALERT"``, ``"CRITICAL"`` — names that
+        match the ``HEALTH_*`` constants in ``sim.telemetry.schemas``.
+        """
+        return self.overall_status().name
+
     # ------------------------------------------------------------------
     # Channel assessors
     # ------------------------------------------------------------------
