@@ -90,8 +90,8 @@ class FlightTerminationSystem:
             nominal_plane_point:  A point on the nominal trajectory plane in
                                   ECEF (m), shape (3,).  Typically the launch
                                   site position.
-            q_actual:             Actual attitude quaternion [w, x, y, z].
-            q_desired:            Desired attitude quaternion [w, x, y, z].
+            q_actual:             Actual attitude quaternion [x, y, z, w].
+            q_desired:            Desired attitude quaternion [x, y, z, w].
             ekf_pos_covariance:   3x3 position covariance matrix (m²).
             axial_g:              Axial load factor (g).
             lateral_g:            Lateral load factor (g).

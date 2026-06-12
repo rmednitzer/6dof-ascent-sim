@@ -45,11 +45,16 @@ class AttitudeController:
     - As mass decreases, the moment of inertia drops; gains are reduced
       proportionally to maintain consistent bandwidth.
 
-    The scheduling follows the standard approach:
-        K_eff = K_base * (q_ref / max(q, q_min)) * (mass / mass_ref)
+    The scheduling multiplies the baseline gains by q- and mass-derived
+    factors (see ``_schedule_gains`` for the exact clamps):
+        q_factor    = clamp(q_ref / max(q, 100 Pa), 0.3, 3.0)  for q > 100 Pa,
+                      else 1.5  (vacuum boost: no aerodynamic stiffness)
+        mass_factor = clamp(sqrt(mass / mass_ref), 0.5, 2.0)
+        K_eff       = K_base * q_factor * mass_factor
 
-    This ensures roughly constant closed-loop natural frequency across
-    the flight envelope.
+    The square root on the mass ratio tracks the attitude natural
+    frequency (omega_n ~ sqrt(control torque / inertia)), keeping the
+    closed-loop bandwidth roughly constant across the flight envelope.
     """
 
     def __init__(self) -> None:
