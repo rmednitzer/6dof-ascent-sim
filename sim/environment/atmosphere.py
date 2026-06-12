@@ -202,12 +202,12 @@ def atmosphere(altitude_m: float, density_scale: float | None = None) -> Atmosph
         )
 
     # ------------------------------------------------------------------
-    # 86 -- 200 km: exponential decay approximation
+    # 86 -- 1000 km: piecewise-exponential thermosphere model
     # ------------------------------------------------------------------
     if altitude_m < _EXOSPHERE_CEILING_M:
         return _high_altitude(altitude_m, density_scale)
 
-    # Above 200 km — effectively vacuum
+    # Above 1000 km (_EXOSPHERE_CEILING_M) — effectively vacuum
     return AtmosphereResult(
         density_kg_m3=0.0,
         pressure_pa=0.0,
