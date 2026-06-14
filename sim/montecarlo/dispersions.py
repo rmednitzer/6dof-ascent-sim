@@ -38,9 +38,14 @@ DEFAULT_DISPERSIONS = [
     # Wind
     Dispersion("WIND_SPEED_MS", "truncated_gaussian", sigma=15.0, bounds=(0, 50)),
     Dispersion("WIND_DIRECTION_DEG", "uniform", sigma=None, bounds=(0, 360)),
-    # Sensors
-    Dispersion("IMU_ACCEL_BIAS_MPS2", "gaussian", sigma=0.002, bounds=None),
-    Dispersion("IMU_GYRO_BIAS_RADS", "gaussian", sigma=0.0002, bounds=None),
+    # Sensors. The IMU bias-instability terms are RMS random-walk rates consumed
+    # as the standard deviation of a Gaussian draw in the sensor model
+    # (sensors.py), so they MUST stay non-negative. They are therefore truncated
+    # (like GPS_POS_NOISE_M below) rather than plain Gaussian — an unbounded
+    # Gaussian here sampled negative ~31% of the time, crashing ~half of all
+    # Monte Carlo runs with "scale < 0" (finding AD-18).
+    Dispersion("IMU_ACCEL_BIAS_MPS2", "truncated_gaussian", sigma=0.002, bounds=(0.0001, 0.007)),
+    Dispersion("IMU_GYRO_BIAS_RADS", "truncated_gaussian", sigma=0.0002, bounds=(0.00001, 0.0007)),
     Dispersion("GPS_POS_NOISE_M", "truncated_gaussian", sigma=2.0, bounds=(1, 15)),
     # Mass
     Dispersion("S1_DRY_MASS_KG", "gaussian", sigma=222, bounds=None),
@@ -50,12 +55,24 @@ DEFAULT_DISPERSIONS = [
 def sample_dispersion(dispersion: Dispersion, rng: np.random.Generator) -> float:
     """Sample a single dispersion value.
 
+    Returns the zero-mean *offset* for ``gaussian`` and ``truncated_gaussian``
+    (the caller adds it to the nominal), or the absolute drawn value for
+    ``uniform``.
+
+    Truncation of a ``truncated_gaussian`` to its ``bounds`` is deliberately
+    *not* applied here: ``bounds`` are absolute limits on the resulting
+    parameter, not on the zero-mean offset, so clamping must happen against
+    ``nominal + offset`` in :func:`generate_dispersed_config`. (Clamping the
+    offset here is what previously collapsed e.g. ``CD_SCALE_FACTOR`` to a
+    constant, because every small offset fell below the absolute lower bound.)
+
     Args:
         dispersion: Dispersion definition.
         rng: Numpy random generator.
 
     Returns:
-        Sampled parameter offset (for Gaussian) or absolute value (for uniform).
+        Sampled parameter offset (for Gaussian/truncated) or absolute value
+        (for uniform).
     """
     if dispersion.distribution == "gaussian":
         return float(rng.normal(0.0, dispersion.sigma))
@@ -63,11 +80,7 @@ def sample_dispersion(dispersion: Dispersion, rng: np.random.Generator) -> float
         low, high = dispersion.bounds
         return float(rng.uniform(low, high))
     elif dispersion.distribution == "truncated_gaussian":
-        val = rng.normal(0.0, dispersion.sigma)
-        if dispersion.bounds is not None:
-            low, high = dispersion.bounds
-            val = np.clip(val, low, high)
-        return float(val)
+        return float(rng.normal(0.0, dispersion.sigma))
     else:
         raise ValueError(f"Unknown distribution: {dispersion.distribution}")
 
@@ -99,5 +112,13 @@ def generate_dispersed_config(
         if d.distribution == "uniform":
             overrides[d.parameter] = sample
         else:
-            overrides[d.parameter] = nominal + sample
+            value = nominal + sample
+            # Truncated Gaussian: clamp the FINAL parameter value to the
+            # absolute bounds (these constrain the parameter, e.g. drag scale
+            # in [0.7, 1.3], not the zero-mean offset). A plain "gaussian" has
+            # no bounds and is left unconstrained.
+            if d.distribution == "truncated_gaussian" and d.bounds is not None:
+                low, high = d.bounds
+                value = float(np.clip(value, low, high))
+            overrides[d.parameter] = value
     return overrides

@@ -8,7 +8,8 @@ ADRs `0001`-`0005` are **backfilled** from decisions already embodied in the
 code (status `accepted`), written during the 2026-06-12 audit. Where the
 original rationale is not recoverable from the repository it is marked as such
 rather than invented. `0006` documents an audit fix. `0007`-`0009` are
-`proposed` and need a maintainer decision (see `BACKLOG.md`).
+`proposed` and need a maintainer decision (see `BACKLOG.md`). `0010` documents
+the experimental SLURM HPC Monte Carlo backend added in this branch.
 
 | ADR | Title | Status |
 |-----|-------|--------|
@@ -21,3 +22,4 @@ rather than invented. `0006` documents an audit fix. `0007`-`0009` are
 | [0007](0007-adopt-dependency-lockfile.md) | Adopt a dependency lockfile | proposed |
 | [0008](0008-end-to-end-simulation-test.md) | Add an end-to-end simulation regression test | proposed |
 | [0009](0009-explicit-dispersion-parameters.md) | Replace mutable-global config override with explicit parameter passing | proposed |
+| [0010](0010-slurm-hpc-monte-carlo.md) | SLURM HPC Monte Carlo via job array + shard/collect | accepted (experimental) |

@@ -127,6 +127,13 @@ MC_WORKERS = None  # None = os.cpu_count()
 CD_SCALE_FACTOR = 1.0  # Multiplier on Cd table (dispersed in MC)
 ATMO_DENSITY_SCALE = 1.0  # Multiplier on atmospheric density
 
+# ---------- Monte Carlo on SLURM HPC (experimental) ----------
+# Campaign-level defaults for sim/montecarlo/hpc.py. Cluster-specific
+# placement (partition, account, walltime, memory) lives in SlurmConfig,
+# not here, because it is site-specific infrastructure rather than physics.
+MC_RUNS_PER_TASK = 50  # Runs executed per SLURM array task
+MC_HPC_OUTPUT_DIR = "output/montecarlo"  # Shared dir for shards + aggregate
+
 # ---------- Wind ----------
 WIND_SPEED_MS = 10.0  # Mean wind speed
 WIND_DIRECTION_DEG = 270.0  # Wind coming from west
