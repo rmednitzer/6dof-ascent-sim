@@ -11,7 +11,7 @@ A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch v
 
 - **6-DOF rigid body dynamics** with quaternion attitude representation (scalar-last `[x,y,z,w]`)
 - **RK4 integration** at 100 Hz fixed timestep
-- **WGS84 gravity model** with J2 oblateness perturbation
+- **WGS84 gravity model** with J2–J6 zonal harmonics (analytic geopotential gradient, verified to ~1e-10 vs a numerical gradient)
 - **US Standard Atmosphere 1976** with altitude-dependent wind and gusts
 - **Two-stage propulsion** with pressure-dependent thrust/Isp interpolation
 - **Stage separation state machine** with safety interlocks
