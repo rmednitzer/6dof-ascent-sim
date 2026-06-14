@@ -21,7 +21,7 @@ A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch v
 - **Boundary enforcement** on all actuator commands and structural loads
 - **Flight Termination System** with autonomous abort criteria
 - **Structural dynamics**: flex body bending modes + propellant slosh (pendulum analogy)
-- **Monte Carlo** dispersion analysis with multiprocessing
+- **Monte Carlo** dispersion analysis with multiprocessing (and an experimental [SLURM HPC backend](docs/hpc-slurm.md) for cluster-scale campaigns)
 - **Telemetry recording** with SHA-256 integrity hashing
 - **Post-flight analysis** with trajectory plots and orbit characterization
 
@@ -73,6 +73,26 @@ This produces three files in `examples/output/`:
 - `output/telemetry_downlink.json` — Downlink-rate telemetry timeline
 - `output/mission_summary.json` — Mission summary with key metrics and SHA-256 integrity hash
 - `output/plots/` — Trajectory visualization plots
+
+## Monte Carlo
+
+```bash
+python -m sim.montecarlo.dispatcher --runs 1000 --workers 8   # single machine
+```
+
+For cluster-scale campaigns, an **experimental** SLURM backend distributes runs
+across a job array and re-aggregates them into the same output schema (identical
+results for a given base seed):
+
+```bash
+# Dry run: generate sbatch scripts without a cluster (nothing is submitted)
+python -m sim.montecarlo.hpc submit --runs 5000 --runs-per-task 100 \
+    --output-dir /scratch/$USER/mc1 --partition cpu --account proj
+
+# On a SLURM login node, add --submit to launch the array + dependent collect job
+```
+
+See [docs/hpc-slurm.md](docs/hpc-slurm.md) for the full workflow.
 
 ## Configuration
 
@@ -132,7 +152,8 @@ sim/
 │   └── decay.py           # Orbit decay estimation
 ├── montecarlo/
 │   ├── dispersions.py     # Parameter dispersion definitions
-│   ├── dispatcher.py      # Parallel run management
+│   ├── dispatcher.py      # Parallel run management (single machine)
+│   ├── hpc.py             # Experimental SLURM cluster backend (job array)
 │   └── statistics.py      # Result analysis + plots
 └── analysis/
     └── postflight.py      # Post-flight trajectory plots
@@ -146,6 +167,7 @@ examples/
 - [Assumptions](docs/assumptions.md) — Modeling assumptions and simplifications
 - [STPA Analysis](docs/stpa-analysis.md) — Safety analysis
 - [Runbook](docs/runbook.md) — Operating procedures
+- [SLURM HPC Monte Carlo](docs/hpc-slurm.md) — Cluster-scale dispersion campaigns (experimental)
 
 ## Contributing
 
