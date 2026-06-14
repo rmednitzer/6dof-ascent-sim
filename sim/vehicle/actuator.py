@@ -71,25 +71,30 @@ class TVCActuator:
         wn = self._omega_n
         zeta = self._zeta
 
-        # Second-order dynamics: x_ddot = wn^2*(x_cmd - x) - 2*zeta*wn*x_dot
-        accel = wn * wn * (cmd_rad - self._position) - 2.0 * zeta * wn * self._rate
-
-        # Semi-implicit Euler (update rate first, then position)
-        self._rate += accel * dt
-
-        # Rate limiting
-        self._rate = max(-self._max_rate_rad, min(self._max_rate_rad, self._rate))
-
-        # Position update
-        self._position += self._rate * dt
-
-        # Position limiting (with rate zeroing at hard stops)
-        if self._position > self._max_pos_rad:
-            self._position = self._max_pos_rad
-            self._rate = min(0.0, self._rate)
-        elif self._position < -self._max_pos_rad:
-            self._position = -self._max_pos_rad
-            self._rate = max(0.0, self._rate)
+        # Sub-step the second-order ODE. Semi-implicit Euler is only stable for
+        # wn*dt < 2; at 100 Hz with wn = 2*pi*25 = 157 rad/s, wn*dt = 1.57 places
+        # the discrete pole at |lambda| ~ 3 (divergent). The rate limiter then
+        # masked the divergence as a permanent limit cycle, so the actuator never
+        # settled to its command (AD-02). Integrate on sub-steps with
+        # wn*dt_sub <= 0.2 to recover the intended stable second-order transient.
+        n_sub = max(1, math.ceil(wn * dt / 0.2))
+        dt_sub = dt / n_sub
+        for _ in range(n_sub):
+            # x_ddot = wn^2*(x_cmd - x) - 2*zeta*wn*x_dot
+            accel = wn * wn * (cmd_rad - self._position) - 2.0 * zeta * wn * self._rate
+            # Semi-implicit Euler (update rate first, then position)
+            self._rate += accel * dt_sub
+            # Rate (slew-rate) limiting
+            self._rate = max(-self._max_rate_rad, min(self._max_rate_rad, self._rate))
+            # Position update
+            self._position += self._rate * dt_sub
+            # Position limiting (with rate zeroing at hard stops)
+            if self._position > self._max_pos_rad:
+                self._position = self._max_pos_rad
+                self._rate = min(0.0, self._rate)
+            elif self._position < -self._max_pos_rad:
+                self._position = -self._max_pos_rad
+                self._rate = max(0.0, self._rate)
 
         return math.degrees(self._position)
 

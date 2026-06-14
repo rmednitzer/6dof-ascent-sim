@@ -412,11 +412,16 @@ class GuidanceLaw:
                 ratio = T / tau
                 if ratio > 0.95:
                     ratio = 0.95  # Prevent singularity (can't burn all propellant)
+                # Effective burn time consistent with the clamped ratio. Using
+                # the unclamped T in b1/c0/c1 while clamping only the ln term made
+                # the thrust integrals mutually inconsistent, corrupting the B
+                # steering coefficient (~40%) whenever T > tau (AD-10).
+                t_eff = ratio * tau
                 ln_term = -math.log(1.0 - ratio)
                 b0 = v_e * ln_term
-                b1 = b0 * tau - v_e * T
-                c0 = b0 * T - b1
-                c1 = c0 * tau - v_e * T * T / 2.0
+                b1 = b0 * tau - v_e * t_eff
+                c0 = b0 * t_eff - b1
+                c1 = c0 * tau - v_e * t_eff * t_eff / 2.0
             else:
                 # Constant acceleration approximation (enough propellant)
                 b0 = a_thrust * T

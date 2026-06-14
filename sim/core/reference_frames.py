@@ -115,20 +115,37 @@ def lla_to_ecef(lat_rad: float, lon_rad: float, alt_m: float) -> np.ndarray:
     return np.array([x, y, z])
 
 
-def eci_to_ned(pos_eci: np.ndarray, vel_eci: np.ndarray, lat_rad: float, lon_rad: float) -> np.ndarray:
-    """Rotate ECI velocity to NED frame at given geodetic location.
+def eci_to_ned(
+    pos_eci: np.ndarray,
+    vel_eci: np.ndarray,
+    lat_rad: float,
+    lon_rad: float,
+    time_s: float,
+) -> np.ndarray:
+    """Rotate an ECI velocity to the NED frame at a geodetic location.
+
+    Accounts for Earth's rotation: the velocity is transported to the rotating
+    ECEF frame (subtracting the ``omega x r`` transport term and applying the
+    Earth-rotation angle) before projecting onto the local North-East-Down
+    axes. (Finding AD-16: the previous version skipped the ECI->ECEF rotation
+    and the transport term, giving an error of ~|v|*omega*t — ~120 m/s after
+    300 s for an orbital velocity.)
 
     Args:
-        pos_eci: ECI position (not used directly, lat/lon extracted externally).
+        pos_eci: ECI position (m) — needed for the transport term.
         vel_eci: ECI velocity to rotate (m/s).
         lat_rad: Geodetic latitude (rad).
         lon_rad: Longitude (rad).
+        time_s: Seconds since epoch (Earth-rotation angle = omega * time_s).
 
     Returns:
         Velocity in NED frame (m/s).
     """
-    # ECI to ECEF rotation is identity for velocity direction (ignoring transport term)
-    # NED rotation from ECEF
+    # ECI velocity -> ECEF velocity: subtract Earth-rotation transport term,
+    # then rotate by the Earth-rotation angle (eci_to_ecef applies the rotation).
+    omega = np.array([0.0, 0.0, config.EARTH_OMEGA])
+    vel_ecef = eci_to_ecef(vel_eci - np.cross(omega, pos_eci), time_s)
+
     sin_lat = math.sin(lat_rad)
     cos_lat = math.cos(lat_rad)
     sin_lon = math.sin(lon_rad)
@@ -141,7 +158,7 @@ def eci_to_ned(pos_eci: np.ndarray, vel_eci: np.ndarray, lat_rad: float, lon_rad
             [-cos_lat * cos_lon, -cos_lat * sin_lon, -sin_lat],
         ]
     )
-    return R_ecef_ned @ vel_eci
+    return R_ecef_ned @ vel_ecef
 
 
 def quat_to_dcm(q: np.ndarray) -> np.ndarray:

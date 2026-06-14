@@ -11,7 +11,7 @@
 ## Earth Model
 
 - **WGS84 ellipsoid** with semi-major axis 6,378,137 m and flattening 1/298.257223563 (`sim/config.py`).
-- **Zonal harmonics J2–J6** (`EARTH_J2 = 1.08262668e-3` and `EARTH_J3`–`EARTH_J6`, EGM96 values). No tesseral/sectoral harmonics. Sufficient for LEO ascent trajectory accuracy (`sim/environment/gravity.py`).
+- **Zonal harmonics J2–J6** (`EARTH_J2 = 1.08262668e-3` and `EARTH_J3`–`EARTH_J6`, EGM96 values), computed as the exact analytic gradient of the geopotential and verified against a finite-difference gradient to ~1e-10 (relative) across all latitudes (`sim/environment/gravity.py`; `tests/test_fidelity_fixes.py`). No tesseral/sectoral harmonics. (A previous hand-coded form silently zeroed the odd zonals J3/J5 via an extra `1/r` factor; see audit AD-03/AD-11.)
 - **Constant rotation rate** `EARTH_OMEGA = 7.2921150e-5 rad/s`. No precession, nutation, or polar motion. ECI and ECEF coincide at t=0.
 
 ## Atmosphere
@@ -23,13 +23,12 @@
 
 ## Propulsion
 
-- **Linear interpolation** between sea-level and vacuum values for both thrust and Isp (`sim/vehicle/propulsion.py`):
-  - `F = F_vac - (F_vac - F_sl) * (p / p_sl)`
-  - `Isp = Isp_vac - (Isp_vac - Isp_sl) * (p / p_sl)`
+- **Thrust** interpolates linearly between sea-level and vacuum with ambient pressure (`sim/vehicle/propulsion.py`): `F(p) = F_vac - (F_vac - F_sl) * (p / p_sl)`, modelling nozzle back-pressure.
+- **Mass flow is pump-limited and constant at a fixed throttle**, independent of altitude: `mdot = throttle * F_vac / (Isp_vac * g0)`. The effective specific impulse `Isp(p) = F(p) / (mdot * g0)` therefore emerges consistently. (A previous version interpolated thrust and Isp independently, letting `mdot` drift ~1.35% sea-level→vacuum so propellant burn was not conserved; see audit AD-12.)
 - **Ignition and shutdown transients** modeled as 0.5 s linear ramps.
 - **No combustion instability**, nozzle erosion, or mixture ratio effects.
 - **Stage 2 operates in vacuum only**: `thrust_sl = thrust_vac` and `isp_sl = isp_vac` (`sim/vehicle/vehicle.py`, STAGE_2 definition).
-- Mass flow rate: `mdot = F / (Isp * g0)`. No propellant sloshing effect on feed system.
+- No propellant sloshing effect on the feed system.
 
 ## Aerodynamics
 
@@ -52,8 +51,9 @@
 ## Vehicle Dynamics
 
 - **Rigid body** with two optional dynamic sub-models:
-  - **Flex body** (`sim/dynamics/flex_body.py`): First 3 lateral bending modes as damped harmonic oscillators. Semi-implicit Euler integration. Modal frequencies interpolate linearly between full- and empty-propellant values. Modal mass defaults to 1.0 kg (forcing is pre-normalized).
+  - **Flex body** (`sim/dynamics/flex_body.py`): First 3 lateral bending modes as damped harmonic oscillators. Semi-implicit Euler integration. Modal frequencies interpolate linearly between full- and empty-propellant values. **Currently decoupled from GNC**: the bending rate is computed but reaches no consumer before being overwritten, so flex has no effect on the trajectory. Coupling it in naively (rate feedback or navigation) destabilises the vehicle without a frequency-scheduled structural notch filter; this is a known limitation (audit AD-04) pending a dedicated control-design pass.
   - **Propellant slosh** (`sim/dynamics/slosh.py`): Single-tank pendulum analogy. 30% of remaining propellant participates in slosh (`SLOSH_MASS_FRACTION`). Frequency interpolates with fill level. Damping ratio 0.03 (baffled tank). Semi-implicit Euler integration.
+  - **TVC actuator** (`sim/vehicle/actuator.py`): second-order servo (25 Hz bandwidth, ζ=0.7) integrated on adaptive sub-steps so the response stays numerically stable at the 100 Hz outer rate (a single semi-implicit Euler step was divergent and limit-cycled; audit AD-02).
 - **No structural flexibility coupling** between flex modes and slosh.
 - **Instantaneous stage separation** (mass drop). Coast duration is 1.0 s between tail-off and separation.
 - **RK4 force hold** (`sim/main.py`): the translational forces, torques and gravity are evaluated once per 100 Hz step and held constant across the four RK4 sub-stages (only the kinematic states vary per sub-stage). Net dynamics accuracy is therefore effectively first-order within a step; the 100 Hz rate keeps the per-step error small for this trajectory but the "RK4" label refers to the kinematic integration, not the force model.

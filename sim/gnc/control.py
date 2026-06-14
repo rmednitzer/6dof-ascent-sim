@@ -47,8 +47,10 @@ class AttitudeController:
 
     The scheduling multiplies the baseline gains by q- and mass-derived
     factors (see ``_schedule_gains`` for the exact clamps):
-        q_factor    = clamp(q_ref / max(q, 100 Pa), 0.3, 3.0)  for q > 100 Pa,
-                      else 1.5  (vacuum boost: no aerodynamic stiffness)
+        q_factor    = clamp(q_ref / max(q, 1 Pa), 0.3, 1.5)
+                      (continuous: saturates at the 1.5 low-q / vacuum boost,
+                      where there is no aerodynamic stiffness, and falls toward
+                      the 0.3 floor as q rises above q_ref)
         mass_factor = clamp(sqrt(mass / mass_ref), 0.5, 2.0)
         K_eff       = K_base * q_factor * mass_factor
 
@@ -80,10 +82,12 @@ class AttitudeController:
         """Update PID gains based on current flight conditions.
 
         The gain schedule ensures:
-        - Gains decrease when q is high (aero loads provide stiffness)
+        - Gains decrease when q is high (aero loads provide stiffness), with
+          q_factor clamped to a 0.3 floor
         - Gains decrease as mass drops (lower inertia = same torque has more effect)
-        - Below 100 Pa dynamic pressure, gains use the baseline values
-          (exoatmospheric / low-speed regime)
+        - At low q (exoatmospheric / low-speed regime) q_factor saturates at
+          its 1.5 ceiling: a single continuous boost, not a step at any
+          threshold (AD-05)
         """
         if not self._gain_schedule_enabled:
             self._kp = self._kp_base
@@ -98,15 +102,14 @@ class AttitudeController:
         # - At high q: reduce gains (aero provides stiffness + avoid overload)
         # - In vacuum (q < 100 Pa): BOOST gains by 1.5x (no aero damping)
         # - At reference q: unity gain
-        if dynamic_pressure_pa > 100.0:
-            q_factor = q_ref / max(dynamic_pressure_pa, 100.0)
-            if q_factor < 0.3:
-                q_factor = 0.3
-            elif q_factor > 3.0:
-                q_factor = 3.0
-        else:
-            # Exoatmospheric: boost gains to compensate for lack of aero stiffness
-            q_factor = 1.5
+        # Continuous across the whole envelope: gains reduce at high q (aero
+        # provides stiffness) and rise toward the low-q/exoatmospheric boost.
+        # The previous form returned 1.5 at/below 100 Pa but clamped to 3.0 just
+        # above it, stepping every PID gain 2x as the vehicle crossed 100 Pa
+        # (AD-05). Cap the boost at the intended 1.5 vacuum value so the schedule
+        # is continuous and does not over-drive the (now-modelled) flex modes.
+        q_factor = q_ref / max(dynamic_pressure_pa, 1.0)
+        q_factor = min(1.5, max(0.3, q_factor))
 
         # Mass scheduling: scale with sqrt of mass ratio (lower mass = lower inertia)
         mass_factor = math.sqrt(max(mass_kg, 1000.0) / mass_ref)

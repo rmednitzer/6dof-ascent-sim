@@ -45,61 +45,59 @@ def gravitational_acceleration(position_eci: np.ndarray) -> np.ndarray:
     if r < 1.0:
         raise ValueError(f"Position magnitude {r:.3f} m is too small for gravity computation.")
 
-    r_inv = 1.0 / r
-    mu_over_r2 = mu / r_sq
-    re_over_r = r_e * r_inv
-    z_over_r = z * r_inv
+    # --- Point-mass (monopole) term: a = -mu * r_vec / r^3 ---
+    inv_r3 = 1.0 / (r * r_sq)
+    ax = -mu * x * inv_r3
+    ay = -mu * y * inv_r3
+    az = -mu * z * inv_r3
 
-    # Precompute powers of (R_e/r) and (z/r)
-    re_r2 = re_over_r * re_over_r
-    z_r2 = z_over_r * z_over_r
-    z_r3 = z_r2 * z_over_r
-    z_r4 = z_r2 * z_r2
-    z_r5 = z_r4 * z_over_r
-    z_r6 = z_r4 * z_r2
+    # --- Zonal harmonic perturbations J2..J6 ---
+    # Computed as the exact analytic gradient of the perturbing geopotential
+    #     U_n = -(mu/r) * J_n * (R_e/r)^n * P_n(sinφ),   sinφ = z/r
+    # giving, with the chain rule through r and s = z/r,
+    #     a_x,y = (mu J_n (R_e/r)^n / r^2) * (x,y / r) * [(n+1) P_n(s) + s P_n'(s)]
+    #     a_z   = (mu J_n (R_e/r)^n / r^2) * [(n+1) s P_n(s) - (1 - s^2) P_n'(s)]
+    # This handles every zonal term (even *and* odd) with one consistent form
+    # and is non-singular at the poles. Verified against a finite-difference
+    # gradient of the geopotential to ~1e-10 relative at latitudes 0-89 deg.
+    # The previous hand-coded J3/J5 terms carried an extra 1/r factor and a sign
+    # error, which silently zeroed (and flipped) the odd zonals — undetectable in
+    # a total-acceleration check because J3/J5 are ~1e-6 of the signal (AD-03/11).
+    # Reference: Vallado, *Fundamentals of Astrodynamics and Applications*,
+    # 4th ed., §8.6; Montenbruck & Gill, *Satellite Orbits*, §3.2.
+    s = z / r  # sin(geocentric latitude)
+    s2 = s * s
+    re_r = r_e / r
 
-    re_r3 = re_r2 * re_over_r
-    re_r4 = re_r2 * re_r2
-    re_r5 = re_r4 * re_over_r
-    re_r6 = re_r4 * re_r2
+    # Exact Legendre polynomials P_n(s) and their derivatives P_n'(s).
+    legendre_p = (
+        0.5 * (3.0 * s2 - 1.0),  # P2
+        0.5 * s * (5.0 * s2 - 3.0),  # P3
+        0.125 * (35.0 * s2 * s2 - 30.0 * s2 + 3.0),  # P4
+        0.125 * s * (63.0 * s2 * s2 - 70.0 * s2 + 15.0),  # P5
+        (231.0 * s2 * s2 * s2 - 315.0 * s2 * s2 + 105.0 * s2 - 5.0) / 16.0,  # P6
+    )
+    legendre_dp = (
+        3.0 * s,  # P2'
+        0.5 * (15.0 * s2 - 3.0),  # P3'
+        0.5 * s * (35.0 * s2 - 15.0),  # P4'
+        0.125 * (315.0 * s2 * s2 - 210.0 * s2 + 15.0),  # P5'
+        s * (1386.0 * s2 * s2 - 1260.0 * s2 + 210.0) / 16.0,  # P6'
+    )
+    j_coeffs = (config.EARTH_J2, config.EARTH_J3, config.EARTH_J4, config.EARTH_J5, config.EARTH_J6)
 
-    # --- J2 contribution (Vallado Eq. 8-20) ---
-    j2 = config.EARTH_J2
-    j2_fac = 1.5 * j2 * re_r2
-    c_xy_j2 = 1.0 - j2_fac * (5.0 * z_r2 - 1.0)
-    c_z_j2 = 1.0 - j2_fac * (5.0 * z_r2 - 3.0)
-
-    # --- J3 contribution (Vallado Eq. 8-21) ---
-    j3 = config.EARTH_J3
-    j3_fac = 0.5 * j3 * re_r3
-    c_xy_j3 = j3_fac * (35.0 * z_r3 - 15.0 * z_over_r) * r_inv
-    # J3 z-component has different structure: asymmetric in z
-    c_z_j3 = j3_fac * (35.0 * z_r3 - 21.0 * z_over_r) * r_inv
-
-    # --- J4 contribution (Vallado Eq. 8-22) ---
-    j4 = config.EARTH_J4
-    j4_fac = -0.625 * j4 * re_r4
-    c_xy_j4 = j4_fac * (63.0 * z_r4 - 42.0 * z_r2 + 3.0)
-    c_z_j4 = j4_fac * (63.0 * z_r4 - 70.0 * z_r2 + 15.0)
-
-    # --- J5 contribution ---
-    j5 = config.EARTH_J5
-    j5_fac = 0.125 * j5 * re_r5
-    c_xy_j5 = j5_fac * (693.0 * z_r5 - 630.0 * z_r3 + 105.0 * z_over_r) * r_inv
-    c_z_j5 = j5_fac * (693.0 * z_r5 - 945.0 * z_r3 + 315.0 * z_over_r) * r_inv
-
-    # --- J6 contribution ---
-    j6 = config.EARTH_J6
-    j6_fac = -1.0 / 16.0 * j6 * re_r6
-    c_xy_j6 = j6_fac * (3003.0 * z_r6 - 3465.0 * z_r4 + 945.0 * z_r2 - 35.0)
-    c_z_j6 = j6_fac * (3003.0 * z_r6 - 5005.0 * z_r4 + 2205.0 * z_r2 - 245.0)
-
-    # Sum all perturbation terms
-    factor_xy = c_xy_j2 + c_xy_j3 + c_xy_j4 + c_xy_j5 + c_xy_j6
-    factor_z = c_z_j2 + c_z_j3 + c_z_j4 + c_z_j5 + c_z_j6
-
-    ax = -mu_over_r2 * r_inv * x * factor_xy
-    ay = -mu_over_r2 * r_inv * y * factor_xy
-    az = -mu_over_r2 * r_inv * z * factor_z
+    inv_r2 = 1.0 / r_sq
+    re_rn = re_r * re_r  # (R_e/r)^n, starting at n=2
+    x_r = x / r
+    y_r = y / r
+    for i, n in enumerate(range(2, 7)):
+        p_n = legendre_p[i]
+        dp_n = legendre_dp[i]
+        pref = mu * j_coeffs[i] * re_rn * inv_r2  # mu J_n (R_e/r)^n / r^2
+        bracket_xy = (n + 1) * p_n + s * dp_n
+        ax += pref * x_r * bracket_xy
+        ay += pref * y_r * bracket_xy
+        az += pref * ((n + 1) * s * p_n - (1.0 - s2) * dp_n)
+        re_rn *= re_r  # advance to (R_e/r)^(n+1)
 
     return np.array([ax, ay, az])

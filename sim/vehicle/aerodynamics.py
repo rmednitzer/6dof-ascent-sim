@@ -340,8 +340,14 @@ class AerodynamicsModel:
     # -- Stability metrics ---------------------------------------------------
 
     def cop_com_margin(self, com_offset_from_nose: float) -> float:
-        """Static stability margin (m). Positive = statically stable."""
-        return com_offset_from_nose - self.cop_offset_from_nose
+        """Static stability margin (m). Positive = statically stable.
+
+        Static stability requires the centre of pressure to lie *aft* of the
+        centre of mass (farther from the nose), so the margin is
+        ``cop_from_nose - com_from_nose``. (Finding AD-13: this was previously
+        ``com - cop``, which reports a nose-forward, unstable layout as stable.)
+        """
+        return self.cop_offset_from_nose - com_offset_from_nose
 
     def max_q_fraction(self) -> float:
         """Fraction of structural max-q limit currently experienced."""

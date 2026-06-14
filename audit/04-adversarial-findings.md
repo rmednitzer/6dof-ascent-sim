@@ -27,22 +27,33 @@ A repro for each is reproducible from the commands quoted in "Evidence".
 |----|-----|-------|-----------|--------|
 | AD-01 | critical | Truncated-Gaussian dispersions collapse to constants (2 of 4 frozen) | `sim/montecarlo/dispersions.py:60-72,93-103` | **fixed** |
 | AD-18 | high | IMU bias-instability dispersed as unbounded Gaussian → ~52% of MC runs crash (`scale < 0`) | `sim/montecarlo/dispersions.py` (sensors), `sim/gnc/sensors.py:119-120` | **fixed** |
-| AD-02 | high | Second-order TVC actuator numerically unstable at 100 Hz (limit cycle) | `sim/vehicle/actuator.py:75-84` | recorded |
-| AD-03 | medium | J3 zonal-gravity term suppressed ~1/r by an extra factor (effectively zero) | `sim/environment/gravity.py:75-77` | recorded |
-| AD-04 | medium | Flex-body model is inert — gyro coupling written after EKF reads it | `sim/main.py:392-399,449` | recorded |
-| AD-05 | medium | Gain-schedule 2× discontinuity in all PID gains at q = 100 Pa | `sim/gnc/control.py:101-109` | recorded |
-| AD-06 | medium | `fts_triggered` always False in telemetry/summary (wrong source object) | `sim/telemetry/recorder.py:219,275` | recorded |
-| AD-07 | medium | `total_correction_budget` underestimates ~50% for elliptical orbit | `sim/orbital/maneuvers.py:170-177` | recorded |
-| AD-08 | medium | `validate_throttle` counts every post-burnout coast tick as a violation | `sim/safety/boundary_enforcer.py:80-92` | recorded |
-| AD-09 | medium | Staging SEPARATION abort gets stuck in an infinite ABORT loop | `sim/vehicle/staging.py:145-149` | recorded |
-| AD-10 | medium | PEG coefficients use unclamped `T` after clamping `ratio` (inconsistent B) | `sim/gnc/guidance.py:403-425` | recorded |
-| AD-11 | low | J5 zonal-gravity term suppressed ~1/r (same defect as J3) | `sim/environment/gravity.py:88-89` | recorded |
-| AD-12 | low | Propulsion `mdot` not conserved across ambient pressure (1.35% at fixed throttle) | `sim/vehicle/propulsion.py` (thrust/Isp interp) | recorded |
-| AD-13 | low | `cop_com_margin` returns inverted static-stability polarity (unused) | `sim/vehicle/aerodynamics.py:342-344` | recorded |
-| AD-14 | low | `compute_statistics([])` crashes on empty results (`np.max([])`) | `sim/montecarlo/statistics.py:79-90` | recorded |
-| AD-15 | low | Downlink telemetry omits the t = 0 frame (pre-increment off-by-one) | `sim/telemetry/recorder.py:114-117` | recorded |
-| AD-16 | low | `eci_to_ned` ignores ECI→ECEF rotation + transport term (unused) | `sim/core/reference_frames.py:118-144` | recorded |
-| AD-17 | info | Launch azimuth ignores Earth-rotation contribution to inclination | `sim/main.py:230-235` | recorded |
+| AD-02 | high | Second-order TVC actuator numerically unstable at 100 Hz (limit cycle) | `sim/vehicle/actuator.py` | **fixed** |
+| AD-03 | medium | J3 zonal-gravity term suppressed ~1/r by an extra factor (effectively zero) | `sim/environment/gravity.py` | **fixed** |
+| AD-04 | medium | Flex-body model is inert — gyro coupling written after EKF reads it | `sim/main.py` | recorded (see note) |
+| AD-05 | medium | Gain-schedule 2× discontinuity in all PID gains at q = 100 Pa | `sim/gnc/control.py` | **fixed** |
+| AD-06 | medium | `fts_triggered` always False in telemetry/summary (wrong source object) | `sim/telemetry/recorder.py` | **fixed** |
+| AD-07 | medium | `total_correction_budget` underestimates ~50% for elliptical orbit | `sim/orbital/maneuvers.py` | **fixed** |
+| AD-08 | medium | `validate_throttle` counts every post-burnout coast tick as a violation | `sim/safety/boundary_enforcer.py` | **fixed** |
+| AD-09 | medium | Staging SEPARATION abort gets stuck in an infinite ABORT loop | `sim/vehicle/staging.py` | **fixed** |
+| AD-10 | medium | PEG coefficients use unclamped `T` after clamping `ratio` (inconsistent B) | `sim/gnc/guidance.py` | **fixed** |
+| AD-11 | low | J5 zonal-gravity term suppressed ~1/r (same defect as J3) | `sim/environment/gravity.py` | **fixed** |
+| AD-12 | low | Propulsion `mdot` not conserved across ambient pressure (1.35% at fixed throttle) | `sim/vehicle/propulsion.py` | **fixed** |
+| AD-13 | low | `cop_com_margin` returns inverted static-stability polarity (unused) | `sim/vehicle/aerodynamics.py` | **fixed** |
+| AD-14 | low | `compute_statistics([])` crashes on empty results (`np.max([])`) | `sim/montecarlo/statistics.py` | **fixed** |
+| AD-15 | low | Downlink telemetry omits the t = 0 frame (pre-increment off-by-one) | `sim/telemetry/recorder.py` | **fixed** |
+| AD-16 | low | `eci_to_ned` ignores ECI→ECEF rotation + transport term (unused) | `sim/core/reference_frames.py` | **fixed** |
+| AD-17 | info | Launch azimuth ignores Earth-rotation contribution to inclination | `sim/main.py` | recorded |
+
+**Update 2026-06-14 (fidelity pass):** AD-02, AD-03, AD-05–AD-16 were fixed on
+branch `claude/amazing-lamport-tn1h3b`, each with a regression test in
+`tests/test_fidelity_fixes.py` and validated against an authoritative source or a
+known-good numerical check (e.g. gravity vs the geopotential gradient to ~1e-10).
+An end-to-end pipeline test (`tests/test_e2e_simulation.py`) was added. **AD-04**
+was attempted and reverted: coupling the (correctly-scaled) flex mode into the
+controller destabilised the vehicle (FTS abort) without a frequency-scheduled
+structural notch filter — see the AD-04 note below; it remains open for a
+dedicated control-design pass. **AD-17** remains open (proper Earth-rotation
+launch-azimuth targeting is a guidance redesign).
 
 ## Details (verified evidence)
 
@@ -157,6 +168,20 @@ make the bending rates physically enormous **if** the path were ever made live.
 Fix needs both: feed the gyro contamination before the EKF/controller read it
 (or into the rate feedback) **and** pass a realistic modal mass — a coupled
 change that alters all outputs.
+
+**Attempted and reverted (2026-06-14).** This pass implemented the fix: a
+physical modal mass (1e5 kg) and the bending rate fed into the controller's rate
+feedback (one-step lag), the intended control-structure interaction. Result: the
+controller chases the 1.2 Hz bending mode and saturates the TVC slew limit nearly
+every step (boundary violations 245 → ~16 000), and at the full duration the
+vehicle **FTS-aborts at 1.2 km** — a real flutter/limit-cycle instability.
+Adding a first-order structural low-pass either still destabilised (cutoff high)
+or attenuated flex back to inert (cutoff low). The proper fix is a
+**frequency-scheduled structural notch filter** with gain/phase-margin analysis
+(scheduled on the propellant-varying modal frequency) — a control-design task in
+its own right. AD-04 is therefore left **open** and the flex path stays inert
+(with this finding now empirically strengthened: naive coupling is unstable, not
+merely ineffective).
 
 ### AD-05 (medium) — gain-schedule discontinuity at q = 100 Pa
 

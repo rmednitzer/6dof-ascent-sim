@@ -145,8 +145,15 @@ class StagingSequencer:
         elif self._phase is StagingPhase.SEPARATION:
             # Safety check one more time
             if not self._safe_to_separate():
-                event = "STAGING: ABORT — thrust above interlock at separation"
-                return event
+                # Thrust still above the interlock at separation. Do NOT latch
+                # in SEPARATION (which re-tests and emits ABORT every step,
+                # forever, with no recovery). Re-enter TAIL_OFF and re-command
+                # shutdown so thrust can decay, then retry separation on a later
+                # cycle (finding AD-09).
+                self._phase = StagingPhase.TAIL_OFF
+                self._phase_elapsed = 0.0
+                self._s1_engine.shutdown()
+                return "STAGING: ABORT — thrust above interlock; re-entering tail-off"
 
             # Drop the spent stage
             self._vehicle.advance_stage()

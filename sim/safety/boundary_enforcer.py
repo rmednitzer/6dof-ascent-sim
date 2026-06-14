@@ -76,14 +76,35 @@ class BoundaryEnforcer:
         was_clamped = False
         violation: str | None = None
 
-        # No thrust with zero propellant.
+        # No thrust with zero propellant. Commanding zero throttle while empty
+        # (the normal post-burnout coast) is NOT a violation; only a positive
+        # throttle command with no propellant is. Counting every coast tick
+        # inflated violation_count by thousands and made the metric useless
+        # (finding AD-08).
         if propellant_remaining_kg <= 0.0:
-            self.violation_count += 1
+            # Thrust is inhibited (approved value forced to 0.0) the instant the
+            # tanks are dry. Classify the *command* so violation_count stays a
+            # meaningful fault metric: a clean coast (exactly 0.0) is normal; an
+            # out-of-range command (<0 or >1) is a malformed-command fault; an
+            # in-range positive command is "thrust with no propellant".
+            # Counting every coast tick inflated the metric by thousands (AD-08),
+            # but silently passing a negative / >1 command would mask an upstream
+            # fault, so those are still flagged (and forced to 0.0) here.
+            out_of_range = throttle_cmd < 0.0 or throttle_cmd > 1.0
+            commanded_thrust = throttle_cmd > 0.0
+            if out_of_range:
+                violation = "throttle_out_of_range"
+            elif commanded_thrust:
+                violation = "propellant_depleted"
+            else:
+                violation = None
+            if violation is not None:
+                self.violation_count += 1
             return BoundaryResult(
                 approved=True,
                 value=0.0,
-                was_clamped=(throttle_cmd != 0.0),
-                violation_type="propellant_depleted",
+                was_clamped=throttle_cmd != 0.0,
+                violation_type=violation,
                 evidence={
                     "timestamp": ts,
                     "original_cmd": throttle_cmd,
