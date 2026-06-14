@@ -210,10 +210,16 @@ class EngineModel:
             self._effective_throttle = self._throttle_command
 
         # --- Thrust & mass flow ---
-        f_full: float = thrust_at_pressure(self._stage, p_ambient)
-        isp: float = isp_at_pressure(self._stage, p_ambient)
-
-        thrust: float = f_full * self._effective_throttle
-        mdot: float = mass_flow_rate(thrust, isp)
+        # Thrust varies with ambient back-pressure (nozzle expansion), but the
+        # propellant mass flow is set by the turbopump/injector and is ~constant
+        # at a fixed throttle, independent of altitude. Deriving mdot from the
+        # pressure-interpolated Isp made F/(Isp*g0) drift ~1.35% from sea level
+        # to vacuum, so propellant burn was not conserved over a long boost
+        # (AD-12). Hold mdot at the vacuum reference (mdot_vac = F_vac/(Isp_vac
+        # g0)) scaled by throttle; thrust still follows the pressure model, so
+        # the effective Isp = thrust / (mdot g0) emerges consistently.
+        thrust: float = thrust_at_pressure(self._stage, p_ambient) * self._effective_throttle
+        mdot_vac_full: float = mass_flow_rate(self._stage.thrust_vac, self._stage.isp_vac)
+        mdot: float = self._effective_throttle * mdot_vac_full
 
         return thrust, mdot
