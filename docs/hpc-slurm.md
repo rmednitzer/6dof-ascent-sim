@@ -125,7 +125,7 @@ output, so existing `sim.montecarlo.statistics` analysis/plots apply unchanged.
 ## Programmatic API
 
 ```python
-from sim.montecarlo import CampaignSpec, SlurmConfig, submit_campaign, collect_shards
+from sim.montecarlo.hpc import CampaignSpec, SlurmConfig, submit_campaign, collect_shards
 
 spec = CampaignSpec(num_runs=5000, seed=42, runs_per_task=100,
                     output_dir="/scratch/me/mc_run1")

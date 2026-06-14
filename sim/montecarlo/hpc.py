@@ -272,7 +272,7 @@ def _worker_argv(spec: CampaignSpec, task_id_expr: str) -> list[str]:
         "run-task",
         "--task-id",
         task_id_expr,
-        "--num-runs",
+        "--runs",
         str(spec.num_runs),
         "--runs-per-task",
         str(spec.runs_per_task),
@@ -296,7 +296,7 @@ def _collect_argv(spec: CampaignSpec) -> list[str]:
         "-m",
         "sim.montecarlo.hpc",
         "collect",
-        "--num-runs",
+        "--runs",
         str(spec.num_runs),
         "--runs-per-task",
         str(spec.runs_per_task),
@@ -475,6 +475,18 @@ def collect_shards(spec: CampaignSpec, *, allow_incomplete: bool = False) -> lis
     for sf in shard_files:
         with open(sf) as f:
             data = json.load(f)
+        # Refuse to mix shards from a different schema or a different campaign
+        # in the same directory — otherwise stray shards would be silently
+        # merged/deduped into a wrong aggregate.
+        sv = data.get("schema_version")
+        if sv != SHARD_SCHEMA_VERSION:
+            raise ValueError(f"{sf}: shard schema_version {sv!r} != expected {SHARD_SCHEMA_VERSION}")
+        if data.get("num_runs") != spec.num_runs or data.get("seed") != spec.seed:
+            raise ValueError(
+                f"{sf}: shard campaign (num_runs={data.get('num_runs')}, seed={data.get('seed')}) "
+                f"does not match the requested campaign (num_runs={spec.num_runs}, seed={spec.seed}); "
+                f"refusing to mix campaigns in one output dir"
+            )
         for rec in data.get("results", []):
             result = MonteCarloResult(**rec)
             # Later shards win on duplicate indices (idempotent re-runs of a task).
@@ -695,9 +707,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Entry point for ``python -m sim.montecarlo.hpc``."""
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+def _build_parser() -> argparse.ArgumentParser:
+    """Construct the CLI parser. Kept separate from :func:`main` so tests can
+    assert the generated sbatch commands actually parse (see
+    ``_worker_argv``/``_collect_argv``)."""
     parser = argparse.ArgumentParser(
         description="Experimental: run a Monte Carlo ascent campaign on a SLURM cluster.",
     )
@@ -733,6 +746,13 @@ def main(argv: list[str] | None = None) -> int:
     p_status.add_argument("--job-name", default=None)
     p_status.set_defaults(func=_cmd_status)
 
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for ``python -m sim.montecarlo.hpc``."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    parser = _build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args))
 

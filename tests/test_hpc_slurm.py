@@ -162,9 +162,24 @@ class TestSbatchGeneration:
         spec, slurm = self._spec_slurm()
         script = hpc.generate_sbatch_script(spec, slurm)
         assert "run-task" in script
-        assert "--num-runs 1003" in script
+        # The flag must match the CLI parser (which defines --runs, not --num-runs).
+        assert "--runs 1003" in script
+        assert "--num-runs" not in script
         assert "--seed 7" in script
         assert "--runs-per-task 50" in script
+
+    def test_generated_commands_are_accepted_by_the_cli(self):
+        """Round-trip guard: the argv embedded in the sbatch scripts must parse
+        through the real CLI, or the array/collect jobs fail on the cluster with
+        'unrecognized arguments'. (This is what the flag-name bug evaded.)"""
+        spec = hpc.CampaignSpec(num_runs=10, seed=3, runs_per_task=4, output_dir="output/mc", no_flex=True)
+        parser = hpc._build_parser()
+        # Strip the interpreter prefix ("-m", "sim.montecarlo.hpc"); a concrete
+        # task id stands in for ${SLURM_ARRAY_TASK_ID}.
+        worker = hpc._worker_argv(spec, "0")[2:]
+        collect = hpc._collect_argv(spec)[2:]
+        parser.parse_args(worker)  # raises SystemExit on an unknown flag
+        parser.parse_args(collect)
 
     def test_optional_directives_omitted_when_unset(self):
         spec = hpc.CampaignSpec(num_runs=10, runs_per_task=5)
@@ -264,6 +279,15 @@ class TestCollectErrors:
         spec = hpc.CampaignSpec(num_runs=10, runs_per_task=5, output_dir=str(tmp_path))
         with pytest.raises(FileNotFoundError):
             hpc.collect_shards(spec)
+
+    def test_mismatched_campaign_shard_rejected(self, fake_sim, tmp_path):
+        """A shard from a different campaign (seed) in the same dir must not be
+        silently merged into the aggregate."""
+        spec_a = hpc.CampaignSpec(num_runs=10, seed=1, runs_per_task=5, output_dir=str(tmp_path))
+        hpc.run_task(0, spec_a)
+        spec_b = hpc.CampaignSpec(num_runs=10, seed=2, runs_per_task=5, output_dir=str(tmp_path))
+        with pytest.raises(ValueError, match="does not match"):
+            hpc.collect_shards(spec_b)
 
 
 class TestSubmission:
