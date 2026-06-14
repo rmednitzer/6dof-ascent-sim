@@ -50,12 +50,24 @@ DEFAULT_DISPERSIONS = [
 def sample_dispersion(dispersion: Dispersion, rng: np.random.Generator) -> float:
     """Sample a single dispersion value.
 
+    Returns the zero-mean *offset* for ``gaussian`` and ``truncated_gaussian``
+    (the caller adds it to the nominal), or the absolute drawn value for
+    ``uniform``.
+
+    Truncation of a ``truncated_gaussian`` to its ``bounds`` is deliberately
+    *not* applied here: ``bounds`` are absolute limits on the resulting
+    parameter, not on the zero-mean offset, so clamping must happen against
+    ``nominal + offset`` in :func:`generate_dispersed_config`. (Clamping the
+    offset here is what previously collapsed e.g. ``CD_SCALE_FACTOR`` to a
+    constant, because every small offset fell below the absolute lower bound.)
+
     Args:
         dispersion: Dispersion definition.
         rng: Numpy random generator.
 
     Returns:
-        Sampled parameter offset (for Gaussian) or absolute value (for uniform).
+        Sampled parameter offset (for Gaussian/truncated) or absolute value
+        (for uniform).
     """
     if dispersion.distribution == "gaussian":
         return float(rng.normal(0.0, dispersion.sigma))
@@ -63,11 +75,7 @@ def sample_dispersion(dispersion: Dispersion, rng: np.random.Generator) -> float
         low, high = dispersion.bounds
         return float(rng.uniform(low, high))
     elif dispersion.distribution == "truncated_gaussian":
-        val = rng.normal(0.0, dispersion.sigma)
-        if dispersion.bounds is not None:
-            low, high = dispersion.bounds
-            val = np.clip(val, low, high)
-        return float(val)
+        return float(rng.normal(0.0, dispersion.sigma))
     else:
         raise ValueError(f"Unknown distribution: {dispersion.distribution}")
 
@@ -99,5 +107,13 @@ def generate_dispersed_config(
         if d.distribution == "uniform":
             overrides[d.parameter] = sample
         else:
-            overrides[d.parameter] = nominal + sample
+            value = nominal + sample
+            # Truncated Gaussian: clamp the FINAL parameter value to the
+            # absolute bounds (these constrain the parameter, e.g. drag scale
+            # in [0.7, 1.3], not the zero-mean offset). A plain "gaussian" has
+            # no bounds and is left unconstrained.
+            if d.distribution == "truncated_gaussian" and d.bounds is not None:
+                low, high = d.bounds
+                value = float(np.clip(value, low, high))
+            overrides[d.parameter] = value
     return overrides
