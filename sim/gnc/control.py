@@ -98,15 +98,14 @@ class AttitudeController:
         # - At high q: reduce gains (aero provides stiffness + avoid overload)
         # - In vacuum (q < 100 Pa): BOOST gains by 1.5x (no aero damping)
         # - At reference q: unity gain
-        if dynamic_pressure_pa > 100.0:
-            q_factor = q_ref / max(dynamic_pressure_pa, 100.0)
-            if q_factor < 0.3:
-                q_factor = 0.3
-            elif q_factor > 3.0:
-                q_factor = 3.0
-        else:
-            # Exoatmospheric: boost gains to compensate for lack of aero stiffness
-            q_factor = 1.5
+        # Continuous across the whole envelope: gains reduce at high q (aero
+        # provides stiffness) and rise toward the low-q/exoatmospheric boost.
+        # The previous form returned 1.5 at/below 100 Pa but clamped to 3.0 just
+        # above it, stepping every PID gain 2x as the vehicle crossed 100 Pa
+        # (AD-05). Cap the boost at the intended 1.5 vacuum value so the schedule
+        # is continuous and does not over-drive the (now-modelled) flex modes.
+        q_factor = q_ref / max(dynamic_pressure_pa, 1.0)
+        q_factor = min(1.5, max(0.3, q_factor))
 
         # Mass scheduling: scale with sqrt of mass ratio (lower mass = lower inertia)
         mass_factor = math.sqrt(max(mass_kg, 1000.0) / mass_ref)

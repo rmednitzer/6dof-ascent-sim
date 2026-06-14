@@ -392,8 +392,11 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         ekf.predict(imu_meas, grav_eci, dt)
 
         # Add flex body bending rate to gyro AFTER EKF predict.
-        # This contaminates the controller's rate feedback (realistic), but
-        # does not corrupt the EKF's coning/sculling computation.
+        # NOTE (AD-04): this is currently inert — the contaminated gyro is not
+        # read by any consumer before being overwritten next step, and the
+        # controller uses the true body rate. Coupling it in naively (rate
+        # feedback or EKF) destabilises the vehicle without a frequency-scheduled
+        # structural notch filter; see audit/04-adversarial-findings.md.
         if flex_body is not None:
             flex_rate = flex_body.total_bending_rate_at_imu()
             imu_meas.gyro_body_rads = imu_meas.gyro_body_rads + np.array([0.0, flex_rate, 0.0])
@@ -589,6 +592,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             boundary_enforcer=enforcer,
             time_s=t,
             sim_context=sim_context,
+            fts=fts,
         )
 
         # --- Progress ---
@@ -659,6 +663,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             true_state=true_state,
             health_monitor=health_monitor,
             boundary_enforcer=enforcer,
+            fts=fts,
         )
         if not quiet:
             _print_summary(summary, orbit_elements_dict)

@@ -166,13 +166,17 @@ def total_correction_budget(
     if not achieved.is_bound or achieved.periapsis_alt_km <= 0.0:
         return math.inf
 
-    # Current semi-major axis as reference radius for the achieved orbit
-    r_achieved = achieved.semi_major_axis_m
+    # Periapsis radius of the achieved orbit. The eccentricity-correction term
+    # below circularises at periapsis, so the altitude raise must depart from
+    # periapsis — not the semi-major axis. Otherwise an elliptical orbit whose
+    # SMA happens to equal the target reports ~zero altitude cost while it still
+    # needs a Hohmann transfer up from periapsis (finding AD-07).
+    r_peri = achieved.semi_major_axis_m * (1.0 - achieved.eccentricity)
     r_target = EARTH_RADIUS_M + target_alt_m
 
-    # Altitude correction via Hohmann transfer
-    if abs(r_achieved - r_target) > 1.0:
-        dv1, dv2, _ = hohmann_transfer(r_achieved, r_target)
+    # Altitude correction via Hohmann transfer (from the circularised periapsis)
+    if abs(r_peri - r_target) > 1.0:
+        dv1, dv2, _ = hohmann_transfer(r_peri, r_target)
         dv_altitude = dv1 + dv2
     else:
         dv_altitude = 0.0

@@ -76,14 +76,20 @@ class BoundaryEnforcer:
         was_clamped = False
         violation: str | None = None
 
-        # No thrust with zero propellant.
+        # No thrust with zero propellant. Commanding zero throttle while empty
+        # (the normal post-burnout coast) is NOT a violation; only a positive
+        # throttle command with no propellant is. Counting every coast tick
+        # inflated violation_count by thousands and made the metric useless
+        # (finding AD-08).
         if propellant_remaining_kg <= 0.0:
-            self.violation_count += 1
+            commanded_thrust = throttle_cmd > 0.0
+            if commanded_thrust:
+                self.violation_count += 1
             return BoundaryResult(
                 approved=True,
                 value=0.0,
-                was_clamped=(throttle_cmd != 0.0),
-                violation_type="propellant_depleted",
+                was_clamped=commanded_thrust,
+                violation_type="propellant_depleted" if commanded_thrust else None,
                 evidence={
                     "timestamp": ts,
                     "original_cmd": throttle_cmd,

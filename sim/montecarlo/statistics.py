@@ -75,19 +75,19 @@ def compute_statistics(results: list[MonteCarloResult]) -> dict:
 
     stats["limit_proximity"] = {
         "peak_q_pct": {
-            "mean": float(np.mean(peak_q) / config.MAX_Q_PA * 100),
-            "max": float(np.max(peak_q) / config.MAX_Q_PA * 100),
-            "p99": float(np.percentile(peak_q, 99) / config.MAX_Q_PA * 100) if n > 0 else 0,
+            "mean": float(np.mean(peak_q) / config.MAX_Q_PA * 100) if n > 0 else 0.0,
+            "max": float(np.max(peak_q) / config.MAX_Q_PA * 100) if n > 0 else 0.0,
+            "p99": float(np.percentile(peak_q, 99) / config.MAX_Q_PA * 100) if n > 0 else 0.0,
         },
         "peak_g_pct": {
-            "mean": float(np.mean(peak_g) / config.MAX_AXIAL_G * 100),
-            "max": float(np.max(peak_g) / config.MAX_AXIAL_G * 100),
-            "p99": float(np.percentile(peak_g, 99) / config.MAX_AXIAL_G * 100) if n > 0 else 0,
+            "mean": float(np.mean(peak_g) / config.MAX_AXIAL_G * 100) if n > 0 else 0.0,
+            "max": float(np.max(peak_g) / config.MAX_AXIAL_G * 100) if n > 0 else 0.0,
+            "p99": float(np.percentile(peak_g, 99) / config.MAX_AXIAL_G * 100) if n > 0 else 0.0,
         },
     }
     stats["boundary_clamps"] = {
-        "mean": float(np.mean(clamps)),
-        "max": int(np.max(clamps)),
+        "mean": float(np.mean(clamps)) if n > 0 else 0.0,
+        "max": int(np.max(clamps)) if n > 0 else 0,
     }
 
     return stats

@@ -80,6 +80,7 @@ class TelemetryRecorder:
         boundary_enforcer: Any,
         time_s: float,
         sim_context: dict[str, Any],
+        fts: Any = None,
     ) -> None:
         """Capture a single telemetry frame from the current simulation step.
 
@@ -108,13 +109,16 @@ class TelemetryRecorder:
             boundary_enforcer,
             time_s,
             sim_context,
+            fts,
         )
 
         self.internal_frames.append(frame)
-        self._step_count += 1
 
+        # Decimate on a 0-based counter so the t=0 frame (step 0) is the first
+        # downlink frame; incrementing before the test dropped t=0 (AD-15).
         if self._step_count % self._decimation_ratio == 0:
             self.downlink_frames.append(frame)
+        self._step_count += 1
 
     # ------------------------------------------------------------------
     # Output
@@ -126,6 +130,7 @@ class TelemetryRecorder:
         true_state: Any,
         health_monitor: Any,
         boundary_enforcer: Any,
+        fts: Any = None,
     ) -> MissionSummary:
         """Persist telemetry and mission summary to disk.
 
@@ -169,6 +174,7 @@ class TelemetryRecorder:
             health_monitor=health_monitor,
             boundary_enforcer=boundary_enforcer,
             telemetry_hash=telemetry_hash,
+            fts=fts,
         )
 
         summary_json = json.dumps(_json_safe(summary.to_dict()), indent=2, allow_nan=False)
@@ -188,6 +194,7 @@ class TelemetryRecorder:
         boundary_enforcer: Any,
         time_s: float,
         ctx: dict[str, Any],
+        fts: Any = None,
     ) -> TelemetryFrame:
         """Assemble a :class:`TelemetryFrame` from simulation objects.
 
@@ -216,7 +223,7 @@ class TelemetryRecorder:
             ekf_position_uncertainty_m=ctx.get("ekf_position_uncertainty_m", 0.0),
             health_status=getattr(health_monitor, "status", "NOMINAL"),
             boundary_violations=getattr(boundary_enforcer, "violation_count", 0),
-            fts_triggered=getattr(boundary_enforcer, "fts_triggered", False),
+            fts_triggered=getattr(fts, "fts_triggered", False),
         )
 
     def _build_summary(
@@ -226,6 +233,7 @@ class TelemetryRecorder:
         health_monitor: Any,
         boundary_enforcer: Any,
         telemetry_hash: str,
+        fts: Any = None,
     ) -> MissionSummary:
         """Compute peak values from recorded frames and populate a summary."""
         pos = true_state.position_eci
@@ -272,7 +280,7 @@ class TelemetryRecorder:
             peak_lateral_g=peak_lateral,
             peak_mach_number=peak_mach,
             total_boundary_violations=total_violations,
-            fts_triggered=getattr(boundary_enforcer, "fts_triggered", False),
+            fts_triggered=getattr(fts, "fts_triggered", False),
             health_status_final=getattr(health_monitor, "status", "NOMINAL"),
             telemetry_hash_sha256=telemetry_hash,
             total_frames_internal=len(self.internal_frames),
