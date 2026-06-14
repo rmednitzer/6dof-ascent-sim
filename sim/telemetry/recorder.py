@@ -93,14 +93,17 @@ class TelemetryRecorder:
             estimated_state: The EKF-estimated :class:`VehicleState` (used for
                 position uncertainty).
             health_monitor: Object exposing ``status`` (str) for vehicle health.
-            boundary_enforcer: Object exposing ``violation_count`` (int) and
-                ``fts_triggered`` (bool).
+            boundary_enforcer: Object exposing ``violation_count`` (int).
             time_s: Current mission elapsed time (s).
             sim_context: Dictionary carrying per-step derived quantities.
                 Expected keys include ``throttle``, ``thrust_n``,
                 ``dynamic_pressure_pa``, ``mach_number``, ``axial_g``,
                 ``lateral_g``, ``stage``, and
                 ``ekf_position_uncertainty_m``.
+            fts: Optional Flight Termination System exposing ``fts_triggered``
+                (bool); defaults to ``False`` when ``None``. (This flag was
+                previously read off ``boundary_enforcer``, which never exposed
+                it, so it was always ``False`` -- AD-06/AD-15.)
         """
         frame = self._build_frame(
             true_state,
@@ -144,6 +147,9 @@ class TelemetryRecorder:
             true_state: Final ground-truth :class:`VehicleState`.
             health_monitor: Health monitor at simulation end.
             boundary_enforcer: Boundary enforcer at simulation end.
+            fts: Optional Flight Termination System; its ``fts_triggered`` flag
+                is recorded in the mission summary (defaults to ``False`` when
+                ``None``).
 
         Returns:
             The populated :class:`MissionSummary` instance.

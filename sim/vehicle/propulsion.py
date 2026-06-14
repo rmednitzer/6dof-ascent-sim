@@ -54,11 +54,21 @@ def thrust_at_pressure(stage: StageConfig, p_ambient: float) -> float:
 
 
 def isp_at_pressure(stage: StageConfig, p_ambient: float) -> float:
-    """Compute specific impulse (s) for a given ambient pressure.
+    """Compute the textbook nozzle specific impulse (s) at an ambient pressure.
 
     Same linear interpolation as thrust::
 
         Isp = Isp_vac - (Isp_vac - Isp_sl) * (p / p_sl)
+
+    .. note::
+        This standalone curve is **not** the Isp the :class:`EngineModel` uses
+        to set propellant mass flow. Per AD-12 the model holds ``mdot`` at the
+        vacuum reference ``F_vac / (Isp_vac g0)`` (so burn is conserved with
+        altitude) and lets thrust follow the pressure model; the *effective*
+        delivered Isp therefore emerges as ``thrust / (mdot g0)`` -- e.g.
+        ~278.25 s at sea level for stage 1, versus the 282 s this helper
+        returns. Use this function to query the nozzle Isp curve, not to
+        recover the model's mass flow.
 
     Parameters
     ----------

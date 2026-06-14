@@ -47,8 +47,10 @@ class AttitudeController:
 
     The scheduling multiplies the baseline gains by q- and mass-derived
     factors (see ``_schedule_gains`` for the exact clamps):
-        q_factor    = clamp(q_ref / max(q, 100 Pa), 0.3, 3.0)  for q > 100 Pa,
-                      else 1.5  (vacuum boost: no aerodynamic stiffness)
+        q_factor    = clamp(q_ref / max(q, 1 Pa), 0.3, 1.5)
+                      (continuous: saturates at the 1.5 low-q / vacuum boost,
+                      where there is no aerodynamic stiffness, and falls toward
+                      the 0.3 floor as q rises above q_ref)
         mass_factor = clamp(sqrt(mass / mass_ref), 0.5, 2.0)
         K_eff       = K_base * q_factor * mass_factor
 
@@ -80,10 +82,12 @@ class AttitudeController:
         """Update PID gains based on current flight conditions.
 
         The gain schedule ensures:
-        - Gains decrease when q is high (aero loads provide stiffness)
+        - Gains decrease when q is high (aero loads provide stiffness), with
+          q_factor clamped to a 0.3 floor
         - Gains decrease as mass drops (lower inertia = same torque has more effect)
-        - Below 100 Pa dynamic pressure, gains use the baseline values
-          (exoatmospheric / low-speed regime)
+        - At low q (exoatmospheric / low-speed regime) q_factor saturates at
+          its 1.5 ceiling: a single continuous boost, not a step at any
+          threshold (AD-05)
         """
         if not self._gain_schedule_enabled:
             self._kp = self._kp_base

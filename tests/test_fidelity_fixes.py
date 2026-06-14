@@ -198,6 +198,25 @@ class TestBoundaryCoast:
         assert enf.violation_count == 1
         assert res.value == 0.0
 
+    def test_out_of_range_throttle_when_depleted_is_flagged(self):
+        # A malformed command (negative or >1) while depleted is still forced
+        # to 0.0 and flagged as out-of-range, so it cannot mask an upstream
+        # fault during coast (Copilot review on PR #54).
+        from sim.safety.boundary_enforcer import BoundaryEnforcer
+
+        enf = BoundaryEnforcer()
+
+        res = enf.validate_throttle(-0.5, 0.0)
+        assert res.value == 0.0
+        assert res.was_clamped is True
+        assert res.violation_type == "throttle_out_of_range"
+        assert enf.violation_count == 1
+
+        res = enf.validate_throttle(1.5, 0.0)
+        assert res.value == 0.0
+        assert res.violation_type == "throttle_out_of_range"
+        assert enf.violation_count == 2
+
 
 # --------------------------------------------------------------------------- #
 # AD-09 — staging SEPARATION abort recovers instead of looping forever
