@@ -4,8 +4,11 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Website](https://img.shields.io/badge/site-GitHub_Pages-2563eb.svg)](https://rmednitzer.github.io/6dof-ascent-sim/)
 
 A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch vehicle from ignition through LEO insertion.
+
+📊 **[Project site & visual overview →](https://rmednitzer.github.io/6dof-ascent-sim/)**
 
 ## Features
 
