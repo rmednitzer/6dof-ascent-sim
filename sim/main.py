@@ -100,6 +100,7 @@ def _save_config() -> dict:
         "S1_DRY_MASS_KG",
         "FLEX_ENABLED",
         "FLEX_NOTCH_ENABLED",
+        "FLEX_NOTCH_Q",
         "FLEX_MODAL_MASS_KG",
         "SLOSH_ENABLED",
     ]
