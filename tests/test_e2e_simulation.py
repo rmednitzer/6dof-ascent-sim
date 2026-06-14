@@ -70,3 +70,48 @@ class TestEndToEndAscent:
         result = run_simulation(config_override=override, quiet=True)
         assert result.outcome in {"SUCCESS", "TIMEOUT", "FTS_ABORT"}
         assert not result.outcome.startswith("ERROR")  # AD-18: no scale<0 crashes
+
+
+class TestFlexControlStructureInteraction:
+    """AD-04: the flex model is now live in the control loop, stabilised by a
+    frequency-scheduled structural notch filter.
+
+    Previously the bending rate was added to the gyro *after* the EKF/controller
+    had already read it, so the whole flex subsystem was a no-op (flex-on
+    produced byte-identical telemetry to flex-off). It now couples through the
+    controller's measured rate feedback; the notch keeps that coupling from
+    fluttering the vehicle.
+    """
+
+    def test_flex_is_live_and_notch_stabilizes_it(self, monkeypatch):
+        # A truncated ascent through max-q is enough: the lightly-damped first
+        # bending mode flutters during atmospheric flight when unfiltered.
+        monkeypatch.setattr(config, "T_MAX", 100.0)
+
+        flex_off = run_simulation(config_override={"FLEX_ENABLED": False}, quiet=True)
+        flex_on_notch = run_simulation(
+            config_override={"FLEX_ENABLED": True, "FLEX_NOTCH_ENABLED": True},
+            quiet=True,
+        )
+        flex_on_no_notch = run_simulation(
+            config_override={"FLEX_ENABLED": True, "FLEX_NOTCH_ENABLED": False},
+            quiet=True,
+        )
+
+        base = flex_off.boundary_clamp_count
+        # Coupling is live: without the notch, the bending mode floods the TVC
+        # with flutter-driven clamp events — impossible on the old inert wiring,
+        # where flex-on was identical to flex-off.
+        assert flex_on_no_notch.boundary_clamp_count > 10 * (base + 50)
+        # The notch suppresses that flutter back toward the flex-off baseline.
+        assert flex_on_notch.boundary_clamp_count < flex_on_no_notch.boundary_clamp_count / 10
+
+    def test_live_flex_does_not_regress_nominal(self, monkeypatch):
+        """With the notch, the live flex coupling still inserts into orbit."""
+        monkeypatch.setattr(config, "T_MAX", 600.0)
+        result = run_simulation(
+            config_override={"FLEX_ENABLED": True, "FLEX_NOTCH_ENABLED": True},
+            quiet=True,
+        )
+        assert result.outcome == "SUCCESS"
+        assert result.fts_trigger_time_s is None

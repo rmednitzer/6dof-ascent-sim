@@ -85,6 +85,15 @@ class FlexBody:
         """Number of active bending modes."""
         return self._n
 
+    def modal_frequencies_hz(self, propellant_fraction: float) -> np.ndarray:
+        """Current modal natural frequencies (Hz) for each mode.
+
+        Uses the same full-to-empty interpolation as the internal dynamics, so a
+        structural notch filter scheduled on these frequencies tracks exactly the
+        modes this model excites (AD-04).
+        """
+        return self._omega(propellant_fraction) / (2.0 * np.pi)
+
     def reset(self) -> None:
         """Zero all modal states."""
         self._q.fill(0.0)

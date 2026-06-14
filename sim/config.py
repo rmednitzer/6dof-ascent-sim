@@ -111,6 +111,17 @@ FLEX_DAMPING_RATIOS = [0.01, 0.01, 0.005]  # Modal damping ratios
 FLEX_MODE_SLOPES_AT_IMU = [0.5, -0.3, 0.15]  # Mode shape slope at IMU location (rad/m)
 FLEX_MODE_SLOPES_AT_ENGINE = [1.0, 0.8, 0.6]  # Mode shape slope at engine gimbal
 FLEX_ENABLED = True  # Toggle for comparison runs
+# Generalised (modal) mass for the bending oscillators (kg). Sets the bending
+# amplitude per unit TVC lateral force; the default 1.0 in FlexBody.update would
+# make the modal response physically enormous, so the live control-structure
+# coupling (AD-04) passes this realistic value instead.
+FLEX_MODAL_MASS_KG = 1_000_000.0
+# Structural notch filter on the control rate feedback (AD-04). A cascade of
+# notches scheduled on the (propellant-varying) modal frequencies keeps the
+# attitude controller from chasing the lightly-damped bending modes — without it
+# the flex/control coupling flutters and FTS-aborts. Q sets the notch width.
+FLEX_NOTCH_ENABLED = True
+FLEX_NOTCH_Q = 2.0
 
 # ---------- Propellant slosh — pendulum analogy ----------
 SLOSH_MASS_FRACTION = 0.30  # Fraction of propellant participating in slosh

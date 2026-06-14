@@ -30,6 +30,7 @@ from sim.environment.wind import wind_velocity_eci
 from sim.gnc.control import AttitudeController
 from sim.gnc.guidance import GuidanceLaw
 from sim.gnc.navigation import NavigationEKF
+from sim.gnc.notch_filter import StructuralNotchFilter
 from sim.gnc.sensors import SensorSuite
 from sim.safety.boundary_enforcer import BoundaryEnforcer
 from sim.safety.fts import FlightTerminationSystem
@@ -98,6 +99,9 @@ def _save_config() -> dict:
         "GPS_POS_NOISE_M",
         "S1_DRY_MASS_KG",
         "FLEX_ENABLED",
+        "FLEX_NOTCH_ENABLED",
+        "FLEX_NOTCH_Q",
+        "FLEX_MODAL_MASS_KG",
         "SLOSH_ENABLED",
     ]
     return {k: getattr(config, k) for k in keys if hasattr(config, k)}
@@ -220,6 +224,16 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
     tvc_actuators = TVCActuatorPair()
 
     flex_body = FlexBody() if flex_enabled else None
+    # Structural notch filter on the control-loop rate feedback (AD-04); only
+    # active when the flex model is live. Scheduled on the modal frequencies.
+    flex_notch = (
+        StructuralNotchFilter(flex_body.n_modes, config.INTERNAL_HZ, config.FLEX_NOTCH_Q)
+        if (flex_body is not None and config.FLEX_NOTCH_ENABLED)
+        else None
+    )
+    # Notch-filtered measured pitch rate fed to the controller (one-step lag,
+    # i.e. the sense -> compute -> actuate latency of a real flight computer).
+    flex_control_pitch_rate = float(true_state.angular_velocity_body[1])
     slosh_model = SloshModel() if slosh_enabled else None
 
     # Nominal trajectory plane for FTS cross-range check
@@ -353,10 +367,25 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
                     mdot *= burn_frac
 
         # --- Control (gain-scheduled) ---
+        # When the flex model is live, the controller's rate feedback is the
+        # measured body rate (rigid + structural bending sensed at the IMU)
+        # passed through the structural notch filter, rather than the clean true
+        # rate. This is the control-structure interaction the notch tames; a
+        # naive coupling without it flutters and FTS-aborts (AD-04).
+        if flex_body is not None:
+            omega_for_control = np.array(
+                [
+                    true_state.angular_velocity_body[0],
+                    flex_control_pitch_rate,
+                    true_state.angular_velocity_body[2],
+                ]
+            )
+        else:
+            omega_for_control = true_state.angular_velocity_body
         tvc_cmd = controller.update(
             guidance_cmd.desired_quaternion,
             estimated_state.quaternion,
-            true_state.angular_velocity_body,
+            omega_for_control,
             dt,
             dynamic_pressure_pa=q_pa,
             mass_kg=true_state.mass_kg,
@@ -391,15 +420,11 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         ekf.set_mass(true_state.mass_kg)
         ekf.predict(imu_meas, grav_eci, dt)
 
-        # Add flex body bending rate to gyro AFTER EKF predict.
-        # NOTE (AD-04): this is currently inert — the contaminated gyro is not
-        # read by any consumer before being overwritten next step, and the
-        # controller uses the true body rate. Coupling it in naively (rate
-        # feedback or EKF) destabilises the vehicle without a frequency-scheduled
-        # structural notch filter; see audit/04-adversarial-findings.md.
-        if flex_body is not None:
-            flex_rate = flex_body.total_bending_rate_at_imu()
-            imu_meas.gyro_body_rads = imu_meas.gyro_body_rads + np.array([0.0, flex_rate, 0.0])
+        # NOTE (AD-04): the flex model couples into the loop through the *control*
+        # rate feedback (see the flex-body update below), tamed by a frequency-
+        # scheduled structural notch. The EKF deliberately stays on the clean
+        # IMU: its coning/sculling cross-products would amplify structural
+        # vibration that is not true rigid-body rotation.
         if gps_meas is not None:
             ekf.update_gps(gps_meas)
         if baro_meas is not None:
@@ -445,11 +470,28 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             propellant_initial_kg=vehicle.current_stage.propellant,
         )
 
-        # --- Flex body ---
+        # --- Flex body (live control-structure interaction, AD-04) ---
         if flex_body is not None:
-            # TVC lateral force for flex excitation
+            # Excite the bending modes with this step's TVC lateral force, using
+            # a realistic generalised modal mass (the default 1.0 kg would make
+            # the modal response physically enormous).
             tvc_force = thrust_n * sin_tvc_pitch
-            flex_body.update(dt, tvc_force, vehicle.propellant_fraction())
+            flex_body.update(
+                dt,
+                tvc_force,
+                vehicle.propellant_fraction(),
+                modal_mass_kg=config.FLEX_MODAL_MASS_KG,
+            )
+            # The IMU gyro senses rigid rate + bending rate. Feed that measured
+            # pitch rate to the controller next step, after notching out the
+            # modal content so the loop does not chase the structure.
+            flex_rate = flex_body.total_bending_rate_at_imu()
+            measured_pitch_rate = float(true_state.angular_velocity_body[1]) + flex_rate
+            if flex_notch is not None:
+                mode_freqs = flex_body.modal_frequencies_hz(vehicle.propellant_fraction())
+                flex_control_pitch_rate = flex_notch.process(measured_pitch_rate, mode_freqs)
+            else:
+                flex_control_pitch_rate = measured_pitch_rate
 
         # --- Slosh ---
         slosh_force_body = np.zeros(3)

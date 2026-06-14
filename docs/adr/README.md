@@ -10,7 +10,8 @@ original rationale is not recoverable from the repository it is marked as such
 rather than invented. `0006` documents an audit fix. `0007`-`0009` are
 `proposed` and need a maintainer decision (see `BACKLOG.md`). `0010` documents
 the experimental SLURM HPC Monte Carlo backend; `0011` documents the verified
-zonal-harmonic gravity rewrite from the 2026-06-14 fidelity pass.
+zonal-harmonic gravity rewrite and `0012` the live flex/control coupling with a
+structural notch filter, both from the 2026-06-14 fidelity pass.
 
 | ADR | Title | Status |
 |-----|-------|--------|
@@ -25,3 +26,4 @@ zonal-harmonic gravity rewrite from the 2026-06-14 fidelity pass.
 | [0009](0009-explicit-dispersion-parameters.md) | Replace mutable-global config override with explicit parameter passing | proposed |
 | [0010](0010-slurm-hpc-monte-carlo.md) | SLURM HPC Monte Carlo via job array + shard/collect | accepted (experimental) |
 | [0011](0011-verified-zonal-gravity.md) | Zonal-harmonic gravity via the verified analytic geopotential gradient | accepted |
+| [0012](0012-live-flex-structural-notch.md) | Live flex/control coupling stabilised by a frequency-scheduled structural notch | accepted |

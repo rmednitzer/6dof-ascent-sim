@@ -29,7 +29,7 @@ A repro for each is reproducible from the commands quoted in "Evidence".
 | AD-18 | high | IMU bias-instability dispersed as unbounded Gaussian → ~52% of MC runs crash (`scale < 0`) | `sim/montecarlo/dispersions.py` (sensors), `sim/gnc/sensors.py:119-120` | **fixed** |
 | AD-02 | high | Second-order TVC actuator numerically unstable at 100 Hz (limit cycle) | `sim/vehicle/actuator.py` | **fixed** |
 | AD-03 | medium | J3 zonal-gravity term suppressed ~1/r by an extra factor (effectively zero) | `sim/environment/gravity.py` | **fixed** |
-| AD-04 | medium | Flex-body model is inert — gyro coupling written after EKF reads it | `sim/main.py` | recorded (see note) |
+| AD-04 | medium | Flex-body model is inert — gyro coupling written after EKF reads it | `sim/main.py` | **fixed** (live + notch, ADR 0012) |
 | AD-05 | medium | Gain-schedule 2× discontinuity in all PID gains at q = 100 Pa | `sim/gnc/control.py` | **fixed** |
 | AD-06 | medium | `fts_triggered` always False in telemetry/summary (wrong source object) | `sim/telemetry/recorder.py` | **fixed** |
 | AD-07 | medium | `total_correction_budget` underestimates ~50% for elliptical orbit | `sim/orbital/maneuvers.py` | **fixed** |
@@ -42,18 +42,21 @@ A repro for each is reproducible from the commands quoted in "Evidence".
 | AD-14 | low | `compute_statistics([])` crashes on empty results (`np.max([])`) | `sim/montecarlo/statistics.py` | **fixed** |
 | AD-15 | low | Downlink telemetry omits the t = 0 frame (pre-increment off-by-one) | `sim/telemetry/recorder.py` | **fixed** |
 | AD-16 | low | `eci_to_ned` ignores ECI→ECEF rotation + transport term (unused) | `sim/core/reference_frames.py` | **fixed** |
-| AD-17 | info | Launch azimuth ignores Earth-rotation contribution to inclination | `sim/main.py` | recorded |
+| AD-17 | info | Launch azimuth ignores Earth-rotation contribution to inclination | `sim/gnc/guidance.py` | documented (accepted simplification) |
+| AD-19 | medium | PEG terminal phase rides the 25° FTS attitude limit under dispersions (found via AD-17) | `sim/gnc/guidance.py` | recorded |
 
 **Update 2026-06-14 (fidelity pass):** AD-02, AD-03, AD-05–AD-16 were fixed on
 branch `claude/amazing-lamport-tn1h3b`, each with a regression test in
 `tests/test_fidelity_fixes.py` and validated against an authoritative source or a
 known-good numerical check (e.g. gravity vs the geopotential gradient to ~1e-10).
 An end-to-end pipeline test (`tests/test_e2e_simulation.py`) was added. **AD-04**
-was attempted and reverted: coupling the (correctly-scaled) flex mode into the
-controller destabilised the vehicle (FTS abort) without a frequency-scheduled
-structural notch filter — see the AD-04 note below; it remains open for a
-dedicated control-design pass. **AD-17** remains open (proper Earth-rotation
-launch-azimuth targeting is a guidance redesign).
+was first attempted and reverted (a direct coupling FTS-aborts without a
+structural notch); it is now **fixed** in a follow-up pass — the flex mode is
+live in the control loop, stabilised by a frequency-scheduled structural notch
+(see the AD-04 note below and ADR 0012). **AD-17** was investigated in the same
+pass and is **documented as an accepted simplification**: the corrections work
+but regress Monte-Carlo robustness through a pre-existing PEG terminal
+attitude-margin fragility (now logged as AD-19); see the AD-17 note below.
 
 ## Details (verified evidence)
 
@@ -183,6 +186,21 @@ its own right. AD-04 is therefore left **open** and the flex path stays inert
 (with this finding now empirically strengthened: naive coupling is unstable, not
 merely ineffective).
 
+**Resolved (2026-06-14, follow-up).** The flex mode is now live in the control
+loop and stabilised by the frequency-scheduled structural notch the previous note
+called for (`sim/gnc/notch_filter.py`, ADR 0012). The controller's pitch-rate
+feedback is the measured rate (rigid + bending at the IMU, one-step lag) passed
+through a cascade of RBJ notch biquads centred on the propellant-varying modal
+frequencies; the excitation uses a realistic generalised modal mass
+(`FLEX_MODAL_MASS_KG`). Evidence: (1) flex-on telemetry now differs from flex-off
+(the inert signature is gone — hash `f592…` → `9cd2…`); (2) disabling the notch
+(`FLEX_NOTCH_ENABLED=False`) reproduces the flutter — TVC clamp events jump ~200×
+over a truncated ascent (`tests/test_e2e_simulation.py`); (3) it is
+robustness-neutral — a 24-seed dispersed sweep matches the baseline exactly
+(20/24, same aborts). The notch frequency response is unit-tested
+(`tests/test_notch_filter.py`: full rejection at the modal frequency, unity at
+DC/Nyquist).
+
 ### AD-05 (medium) — gain-schedule discontinuity at q = 100 Pa
 
 `_schedule_gains` uses `q_factor = clamp(q_ref/q, 0.3, 3.0)` for `q > 100 Pa`,
@@ -295,11 +313,39 @@ transport term) before the NED projection.
 
 ### AD-17 (info) — launch azimuth ignores Earth-rotation contribution
 
-`main.py` sets `sin(az) = cos(inc)/cos(lat)` — the inertial azimuth — without
-correcting for the launch-site eastward velocity (`ω·R·cos(lat)`). The nominal
-run targets 51.6° but achieves 45.28° inclination, contributing to the ~995 m/s
-"correction dv" reported at insertion. A standard simplification, not a code
-defect, but a targeting-fidelity gap worth noting.
+`main.py`/`guidance.py` set `sin(az) = cos(inc)/cos(lat)` — the inertial azimuth
+— without correcting for the launch-site eastward velocity (`ω·R·cos(lat)`). The
+nominal run targets 51.6° but achieves 45.28° inclination, contributing to the
+~995 m/s "correction dv" reported at insertion. A standard simplification, not a
+code defect, but a targeting-fidelity gap worth noting.
+
+**Investigated and documented as an accepted simplification (2026-06-14).** Three
+fixes were prototyped: (a) the rotating-frame azimuth correction
+`atan2(v·sinAz_in − ωR cos lat, v·cosAz_in)` → 45.28°→46.56°, dv ~995→910; (b)
+holding the target inertial plane → 46.80°; (c) adding active out-of-plane
+velocity nulling (yaw steering) → **51.4°, correction-dv ~266 m/s** — i.e. the
+target is reachable, with peak loads unchanged. **But all three systematically
+regress Monte-Carlo robustness**: a 48-seed dispersed sweep drops 39→35 SUCCESS
+for (a) alone (the new aborts are a strict superset of the baseline aborts), and
+worse for (c). The cause is **AD-19**: the PEG terminal phase already rides the
+25° FTS attitude limit under dispersions (every dispersed abort observed is a
+marginal 25.0x° thrust-axis-error hit near insertion), so any trajectory-plane
+change tips more marginal seeds over. AD-17 is therefore **accepted as a
+simplification** and the launch-azimuth code is left at the inertial relation;
+re-attempt once AD-19 (PEG terminal attitude-margin hardening) lands.
+
+### AD-19 (medium) — PEG terminal phase rides the 25° FTS attitude limit
+
+Found during the AD-17 investigation. Under Monte-Carlo dispersions ~19% of runs
+FTS-abort, and **every observed dispersed abort is a thrust-axis (attitude) error
+of 25.0x° just over the `FTS_ATTITUDE_LIMIT_DEG = 25°` limit, late in the S2 burn
+near insertion** — i.e. the PEG terminal transient operates right at the abort
+threshold with no margin (nominal flight tracks to <5°, so the limit is correct;
+the dispersed terminal transient is the problem). This is the dominant
+Monte-Carlo failure mode and it blocks AD-17 (any trajectory change perturbs the
+marginal population). Fix needs a PEG terminal-guidance hardening pass (smoother
+gravity-turn→PEG handover, command-rate vs low-propellant control authority near
+cutoff) — a dedicated control-design task, recorded rather than guessed.
 
 ## Positive controls (verified clean)
 
