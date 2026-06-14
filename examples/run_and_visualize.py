@@ -340,18 +340,20 @@ def generate_ground_track(frames, output_dir: Path) -> None:
     _apply_style(plt)
 
     lats, lons = _extract_ground_track(frames)
-    if not lats:
+    if len(lats) < 2:
         return
     alts = np.array([f.altitude_m / 1000 for f in frames])
 
     fig, ax = plt.subplots(figsize=(13, 7.5))
 
     # Continuous, altitude-coloured trajectory via a line collection (smoother
-    # than a scatter and reads as a single flight path).
+    # than a scatter and reads as a single flight path). Each segment joins two
+    # samples, so colour it by their mean altitude (N-1 values for N points).
     pts = np.array([lons, lats]).T.reshape(-1, 1, 2)
     segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
+    seg_alts = 0.5 * (alts[:-1] + alts[1:])
     lc = LineCollection(segs, cmap="viridis", linewidth=3.4, zorder=3, capstyle="round")
-    lc.set_array(alts)
+    lc.set_array(seg_alts)
     ax.add_collection(lc)
 
     cbar = fig.colorbar(lc, ax=ax, label="Altitude (km)", shrink=0.85, pad=0.02)
