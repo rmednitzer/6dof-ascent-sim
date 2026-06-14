@@ -1,0 +1,74 @@
+name: Deploy site to GitHub Pages
+
+# Publishes the static landing page in `site/` (plus the example dashboard /
+# ground-track images) to a `gh-pages` branch and points GitHub Pages at it.
+#
+# This uses a plain git push + the Pages REST API rather than the official
+# `actions/*-pages` actions so the only third-party action is `actions/checkout`,
+# which is SHA-pinned to match the convention in `ci.yml`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "examples/output/dashboard.png"
+      - "examples/output/ground_track.png"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the gh-pages branch
+  pages: write # enable Pages via the REST API
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Assemble static site
+        run: |
+          rm -rf _site && mkdir -p _site
+          cp site/index.html _site/index.html
+          cp examples/output/dashboard.png examples/output/ground_track.png _site/
+          touch _site/.nojekyll
+
+      - name: Publish to gh-pages branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd _site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy site (${GITHUB_SHA::7})"
+          git push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      - name: Point GitHub Pages at the gh-pages branch (best effort)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/pages"
+          body='{"source":{"branch":"gh-pages","path":"/"}}'
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$api" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -d "$body" || echo "000")
+          echo "POST /pages -> $code"
+          if [ "$code" = "409" ] || [ "$code" = "422" ]; then
+            put=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$api" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -d "$body" || echo "000")
+            echo "PUT /pages -> $put"
+          fi
+          echo "If Pages was not auto-enabled, set Settings -> Pages -> Source: Deploy from a branch -> gh-pages / (root)."

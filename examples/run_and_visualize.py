@@ -27,6 +27,49 @@ from sim import config
 from sim.core.reference_frames import ecef_to_lla, eci_to_ecef
 from sim.main import run_simulation
 
+# --- Palette (a calm, modern light theme) ------------------------------------
+INK = "#111827"  # near-black for titles
+SUBINK = "#6b7280"  # muted grey for secondary text
+PRIMARY = "#2563eb"  # blue — primary trace
+LIMIT = "#ef4444"  # red — structural / safety limits
+STAGING = "#f59e0b"  # amber — stage separation
+MAXQ = "#8b5cf6"  # violet — max dynamic pressure
+OK = "#10b981"  # green — success / launch
+DANGER = "#dc2626"  # deep red — abort / insertion marker
+
+
+def _apply_style(plt) -> None:
+    """Apply a consistent, polished Matplotlib style."""
+    plt.rcParams.update(
+        {
+            "figure.facecolor": "#ffffff",
+            "savefig.facecolor": "#ffffff",
+            "axes.facecolor": "#f7f8fa",
+            "axes.edgecolor": "#d1d5db",
+            "axes.linewidth": 1.0,
+            "axes.axisbelow": True,
+            "axes.grid": True,
+            "grid.color": "#e5e7eb",
+            "grid.linewidth": 0.9,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "axes.titlesize": 12.5,
+            "axes.titleweight": "bold",
+            "axes.titlecolor": INK,
+            "axes.titlepad": 9,
+            "axes.labelsize": 10.5,
+            "axes.labelcolor": "#374151",
+            "xtick.color": SUBINK,
+            "ytick.color": SUBINK,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            "legend.frameon": False,
+            "legend.fontsize": 8.5,
+            "font.family": "DejaVu Sans",
+            "font.size": 10,
+        }
+    )
+
 
 def _extract_ground_track(frames):
     """Compute lat/lon ground track from ECI positions."""
@@ -48,6 +91,56 @@ def _find_staging_time(frames):
     return None
 
 
+def _panel(
+    ax,
+    times,
+    ys,
+    *,
+    title,
+    ylabel,
+    color=PRIMARY,
+    fill=True,
+    limit=None,
+    limit_label=None,
+    staging_t=None,
+    maxq_t=None,
+    annotate_peak=None,
+):
+    """Draw one styled time-series panel and return the axis."""
+    ax.plot(times, ys, color=color, linewidth=1.8, zorder=4, solid_capstyle="round")
+    if fill:
+        ax.fill_between(times, ys, np.min(ys), color=color, alpha=0.10, zorder=2)
+    if limit is not None:
+        ax.axhline(limit, color=LIMIT, linestyle=(0, (6, 4)), linewidth=1.3, alpha=0.9, label=limit_label or "Limit")
+    if staging_t is not None:
+        ax.axvline(
+            staging_t, color=STAGING, linestyle=(0, (5, 4)), linewidth=1.2, alpha=0.8, label=f"Staging {staging_t:.0f}s"
+        )
+    if maxq_t is not None:
+        ax.axvline(maxq_t, color=MAXQ, linestyle=(0, (1, 2)), linewidth=1.6, alpha=0.9, label=f"Max-Q {maxq_t:.0f}s")
+    if annotate_peak is not None:
+        i = int(np.argmax(ys))
+        ax.scatter([times[i]], [ys[i]], color=color, s=22, zorder=5, edgecolor="white", linewidth=0.8)
+        ax.annotate(
+            annotate_peak.format(ys[i]),
+            (times[i], ys[i]),
+            textcoords="offset points",
+            xytext=(0, 9),
+            ha="center",
+            fontsize=8.5,
+            fontweight="bold",
+            color=INK,
+        )
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.margins(x=0.01)
+    handles, _ = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(loc="best")
+    return ax
+
+
 def generate_dashboard(frames, summary, output_dir: Path) -> None:
     """Create an 8-panel mission dashboard figure."""
     import matplotlib
@@ -56,6 +149,7 @@ def generate_dashboard(frames, summary, output_dir: Path) -> None:
     import matplotlib.pyplot as plt
     from matplotlib.gridspec import GridSpec
 
+    _apply_style(plt)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     times = [f.time_s for f in frames]
@@ -64,141 +158,170 @@ def generate_dashboard(frames, summary, output_dir: Path) -> None:
         return
 
     staging_t = _find_staging_time(frames)
-
-    fig = plt.figure(figsize=(18, 22))
-    fig.suptitle("6-DOF Ascent Simulation — Mission Dashboard", fontsize=16, fontweight="bold", y=0.98)
-
-    gs = GridSpec(4, 2, figure=fig, hspace=0.35, wspace=0.30)
-
-    # Color scheme
-    c_primary = "#2563eb"
-    c_limit = "#dc2626"
-    c_staging = "#f59e0b"
-    c_maxq = "#8b5cf6"
-
-    def _add_staging_line(ax):
-        if staging_t is not None:
-            ax.axvline(staging_t, color=c_staging, linestyle="--", alpha=0.6, label=f"Staging @ {staging_t:.0f}s")
-
-    # --- 1. Altitude vs Time ---
-    ax = fig.add_subplot(gs[0, 0])
-    alts = [f.altitude_m / 1000 for f in frames]
-    ax.plot(times, alts, color=c_primary, linewidth=1.2)
-    ax.axhline(config.TARGET_ALTITUDE_M / 1000, color=c_limit, linestyle="--", alpha=0.7, label="Target")
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Altitude (km)")
-    ax.set_title("Altitude Profile")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # --- 2. Velocity vs Time ---
-    ax = fig.add_subplot(gs[0, 1])
-    vels = [f.velocity_mag_ms for f in frames]
-    ax.plot(times, vels, color=c_primary, linewidth=1.2)
-    ax.axhline(config.TARGET_VELOCITY_MS, color=c_limit, linestyle="--", alpha=0.7, label="Target")
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Velocity (m/s)")
-    ax.set_title("Inertial Velocity")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # --- 3. Dynamic Pressure ---
-    ax = fig.add_subplot(gs[1, 0])
     q_vals = [f.dynamic_pressure_pa / 1000 for f in frames]
-    ax.plot(times, q_vals, color=c_primary, linewidth=1.2)
-    ax.axhline(config.MAX_Q_PA / 1000, color=c_limit, linestyle="--", alpha=0.7, label="Structural Limit")
-    max_q_idx = int(np.argmax(q_vals))
-    ax.axvline(times[max_q_idx], color=c_maxq, linestyle=":", alpha=0.7, label=f"Max-Q @ {times[max_q_idx]:.0f}s")
-    ax.fill_between(times, q_vals, alpha=0.15, color=c_primary)
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Dynamic Pressure (kPa)")
-    ax.set_title("Dynamic Pressure")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    maxq_t = times[int(np.argmax(q_vals))]
 
-    # --- 4. Axial G-Load ---
-    ax = fig.add_subplot(gs[1, 1])
-    g_vals = [f.axial_g for f in frames]
-    ax.plot(times, g_vals, color=c_primary, linewidth=1.2)
-    ax.axhline(config.MAX_AXIAL_G, color=c_limit, linestyle="--", alpha=0.7, label="Structural Limit")
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Axial Acceleration (g)")
-    ax.set_title("Axial G-Load")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    fig = plt.figure(figsize=(16, 19))
+    success = summary.outcome == "SUCCESS"
+    badge = OK if success else DANGER
 
-    # --- 5. Mass vs Time ---
-    ax = fig.add_subplot(gs[2, 0])
-    masses = [f.mass_kg / 1000 for f in frames]
-    ax.plot(times, masses, color=c_primary, linewidth=1.2)
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Mass (tonnes)")
-    ax.set_title("Vehicle Mass")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # --- 6. Throttle & Thrust ---
-    ax = fig.add_subplot(gs[2, 1])
-    throttles = [f.throttle * 100 for f in frames]
-    ax.plot(times, throttles, color=c_primary, linewidth=1.2, label="Throttle")
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Throttle (%)")
-    ax.set_title("Throttle Command")
-    ax.set_ylim(-5, 110)
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # --- 7. EKF Position Uncertainty ---
-    ax = fig.add_subplot(gs[3, 0])
-    ekf_vals = [f.ekf_position_uncertainty_m for f in frames]
-    ax.plot(times, ekf_vals, color=c_primary, linewidth=1.2)
-    ax.axhline(config.FTS_COVARIANCE_LIMIT_M, color=c_limit, linestyle="--", alpha=0.7, label="FTS Limit")
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Position Uncertainty (m)")
-    ax.set_title("EKF Navigation Uncertainty")
-    if max(ekf_vals) > 100:
-        ax.set_yscale("log")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # --- 8. Mach Number ---
-    ax = fig.add_subplot(gs[3, 1])
-    machs = [f.mach_number for f in frames]
-    ax.plot(times, machs, color=c_primary, linewidth=1.2)
-    ax.axhline(1.0, color="gray", linestyle=":", alpha=0.5, label="Mach 1")
-    _add_staging_line(ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Mach Number")
-    ax.set_title("Mach Number")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # --- Summary text box ---
-    summary_text = (
-        f"Outcome: {summary.outcome}\n"
-        f"Flight time: {summary.final_time_s:.1f} s\n"
-        f"Final alt: {summary.final_altitude_m / 1000:.1f} km\n"
-        f"Final vel: {summary.final_velocity_ms:.0f} m/s\n"
-        f"Peak Q: {summary.peak_dynamic_pressure_pa / 1000:.1f} kPa\n"
-        f"Peak G: {summary.peak_axial_g:.2f} g\n"
-        f"Boundary violations: {summary.total_boundary_violations}"
+    # --- Header -------------------------------------------------------------
+    fig.text(
+        0.5,
+        0.975,
+        "6-DOF Launch Vehicle — Ascent Mission Dashboard",
+        ha="center",
+        fontsize=20,
+        fontweight="bold",
+        color=INK,
     )
     fig.text(
         0.5,
-        0.005,
-        summary_text,
+        0.957,
+        f"Target {config.TARGET_ALTITUDE_M / 1000:.0f} km × {config.TARGET_INCLINATION_DEG:.1f}°   ·   "
+        f"two-stage to LEO   ·   100 Hz RK4",
         ha="center",
-        va="bottom",
-        fontsize=10,
-        family="monospace",
-        bbox={"boxstyle": "round,pad=0.5", "facecolor": "#f0f9ff", "edgecolor": "#93c5fd", "alpha": 0.9},
+        fontsize=11.5,
+        color=SUBINK,
+    )
+    fig.text(
+        0.5,
+        0.935,
+        f"  {summary.outcome}  ",
+        ha="center",
+        fontsize=12,
+        fontweight="bold",
+        color="white",
+        bbox={"boxstyle": "round,pad=0.45", "facecolor": badge, "edgecolor": "none"},
+    )
+
+    gs = GridSpec(4, 2, figure=fig, hspace=0.40, wspace=0.22, top=0.915, bottom=0.085, left=0.07, right=0.965)
+
+    alts = [f.altitude_m / 1000 for f in frames]
+    _panel(
+        fig.add_subplot(gs[0, 0]),
+        times,
+        alts,
+        title="Altitude Profile",
+        ylabel="Altitude (km)",
+        limit=config.TARGET_ALTITUDE_M / 1000,
+        limit_label="Target",
+        staging_t=staging_t,
+        annotate_peak="{:.0f} km",
+    )
+
+    vels = [f.velocity_mag_ms for f in frames]
+    _panel(
+        fig.add_subplot(gs[0, 1]),
+        times,
+        vels,
+        title="Inertial Velocity",
+        ylabel="Velocity (m/s)",
+        limit=config.TARGET_VELOCITY_MS,
+        limit_label="Target",
+        staging_t=staging_t,
+    )
+
+    _panel(
+        fig.add_subplot(gs[1, 0]),
+        times,
+        q_vals,
+        title="Dynamic Pressure",
+        ylabel="Dynamic Pressure (kPa)",
+        limit=config.MAX_Q_PA / 1000,
+        limit_label="Structural limit",
+        staging_t=staging_t,
+        maxq_t=maxq_t,
+        annotate_peak="{:.1f} kPa",
+    )
+
+    g_vals = [f.axial_g for f in frames]
+    _panel(
+        fig.add_subplot(gs[1, 1]),
+        times,
+        g_vals,
+        title="Axial G-Load",
+        ylabel="Axial Acceleration (g)",
+        limit=config.MAX_AXIAL_G,
+        limit_label="Structural limit",
+        staging_t=staging_t,
+        annotate_peak="{:.2f} g",
+    )
+
+    masses = [f.mass_kg / 1000 for f in frames]
+    _panel(
+        fig.add_subplot(gs[2, 0]),
+        times,
+        masses,
+        title="Vehicle Mass",
+        ylabel="Mass (tonnes)",
+        staging_t=staging_t,
+    )
+
+    throttles = [f.throttle * 100 for f in frames]
+    ax = _panel(
+        fig.add_subplot(gs[2, 1]),
+        times,
+        throttles,
+        title="Throttle Command",
+        ylabel="Throttle (%)",
+        staging_t=staging_t,
+    )
+    ax.set_ylim(-5, 110)
+
+    ekf_vals = [f.ekf_position_uncertainty_m for f in frames]
+    ax = _panel(
+        fig.add_subplot(gs[3, 0]),
+        times,
+        ekf_vals,
+        title="EKF Navigation Uncertainty",
+        ylabel="Position Uncertainty (m)",
+        fill=False,
+        limit=config.FTS_COVARIANCE_LIMIT_M,
+        limit_label="FTS limit",
+        staging_t=staging_t,
+    )
+    if max(ekf_vals) > 100:
+        ax.set_yscale("log")
+
+    machs = [f.mach_number for f in frames]
+    ax = _panel(
+        fig.add_subplot(gs[3, 1]),
+        times,
+        machs,
+        title="Mach Number",
+        ylabel="Mach",
+        staging_t=staging_t,
+        maxq_t=maxq_t,
+    )
+    ax.axhline(1.0, color=SUBINK, linestyle=":", alpha=0.6, linewidth=1.1)
+
+    # --- Metrics strip ------------------------------------------------------
+    metrics = [
+        ("FLIGHT TIME", f"{summary.final_time_s:.0f} s"),
+        ("FINAL ALT", f"{summary.final_altitude_m / 1000:.0f} km"),
+        ("FINAL VEL", f"{summary.final_velocity_ms:.0f} m/s"),
+        ("PEAK Q", f"{summary.peak_dynamic_pressure_pa / 1000:.1f} kPa"),
+        ("PEAK G", f"{summary.peak_axial_g:.2f} g"),
+        ("PEAK MACH", f"{summary.peak_mach_number:.1f}"),
+        ("FTS", "ABORT" if summary.fts_triggered else "NOMINAL"),
+    ]
+    n = len(metrics)
+    for i, (label, value) in enumerate(metrics):
+        x = 0.07 + (0.965 - 0.07) * (i + 0.5) / n
+        fig.text(x, 0.045, value, ha="center", va="center", fontsize=14, fontweight="bold", color=INK)
+        fig.text(x, 0.022, label, ha="center", va="center", fontsize=8.5, color=SUBINK)
+    fig.patches.append(
+        plt.Rectangle(
+            (0.05, 0.008),
+            0.935,
+            0.058,
+            transform=fig.transFigure,
+            facecolor="#f1f5f9",
+            edgecolor="#e2e8f0",
+            zorder=-1,
+            clip_on=False,
+        )
     )
 
     fig.savefig(output_dir / "dashboard.png", dpi=150, bbox_inches="tight")
@@ -212,28 +335,53 @@ def generate_ground_track(frames, output_dir: Path) -> None:
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+
+    _apply_style(plt)
 
     lats, lons = _extract_ground_track(frames)
-    if not lats:
+    if len(lats) < 2:
         return
+    alts = np.array([f.altitude_m / 1000 for f in frames])
 
-    fig, ax = plt.subplots(figsize=(12, 7))
+    fig, ax = plt.subplots(figsize=(13, 7.5))
 
-    # Plot trajectory colored by altitude
-    alts = [f.altitude_m / 1000 for f in frames]
-    scatter = ax.scatter(lons, lats, c=alts, cmap="plasma", s=1, zorder=2)
-    cbar = fig.colorbar(scatter, ax=ax, label="Altitude (km)", shrink=0.8)  # noqa: F841
+    # Continuous, altitude-coloured trajectory via a line collection (smoother
+    # than a scatter and reads as a single flight path). Each segment joins two
+    # samples, so colour it by their mean altitude (N-1 values for N points).
+    pts = np.array([lons, lats]).T.reshape(-1, 1, 2)
+    segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
+    seg_alts = 0.5 * (alts[:-1] + alts[1:])
+    lc = LineCollection(segs, cmap="viridis", linewidth=3.4, zorder=3, capstyle="round")
+    lc.set_array(seg_alts)
+    ax.add_collection(lc)
 
-    # Mark launch site and insertion
-    ax.plot(lons[0], lats[0], "g^", markersize=12, label="Launch", zorder=3)
-    ax.plot(lons[-1], lats[-1], "r*", markersize=14, label="Insertion", zorder=3)
+    cbar = fig.colorbar(lc, ax=ax, label="Altitude (km)", shrink=0.85, pad=0.02)
+    cbar.outline.set_visible(False)
 
-    ax.set_xlabel("Longitude (deg)")
-    ax.set_ylabel("Latitude (deg)")
-    ax.set_title("Ground Track (colored by altitude)")
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_aspect("equal")
+    # Launch + insertion markers with labels.
+    ax.scatter([lons[0]], [lats[0]], marker="^", s=150, color=OK, edgecolor="white", linewidth=1.4, zorder=5)
+    ax.annotate("  Launch (KSC)", (lons[0], lats[0]), fontsize=10, fontweight="bold", color=INK, va="center")
+    ax.scatter([lons[-1]], [lats[-1]], marker="*", s=320, color=DANGER, edgecolor="white", linewidth=1.2, zorder=5)
+    ax.annotate(
+        "  Insertion",
+        (lons[-1], lats[-1]),
+        fontsize=10,
+        fontweight="bold",
+        color=INK,
+        va="center",
+    )
+
+    # A little breathing room around the track.
+    dlon = (max(lons) - min(lons)) or 1.0
+    dlat = (max(lats) - min(lats)) or 1.0
+    ax.set_xlim(min(lons) - 0.08 * dlon, max(lons) + 0.18 * dlon)
+    ax.set_ylim(min(lats) - 0.12 * dlat, max(lats) + 0.12 * dlat)
+
+    ax.set_xlabel("Longitude (°E)")
+    ax.set_ylabel("Latitude (°N)")
+    ax.set_title("Ascent Ground Track", fontsize=15)
+    ax.set_facecolor("#f0f6ff")
 
     fig.savefig(output_dir / "ground_track.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
