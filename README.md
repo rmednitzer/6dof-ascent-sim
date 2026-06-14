@@ -20,7 +20,7 @@ A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch v
 - **12-state Extended Kalman Filter** (position, velocity, accel bias, gyro bias)
 - **Boundary enforcement** on all actuator commands and structural loads
 - **Flight Termination System** with autonomous abort criteria
-- **Structural dynamics**: flex body bending modes + propellant slosh (pendulum analogy)
+- **Structural dynamics**: flex-body bending modes (live in the control loop, stabilised by a frequency-scheduled structural notch filter) + propellant slosh (pendulum analogy)
 - **Monte Carlo** dispersion analysis with multiprocessing (and an experimental [SLURM HPC backend](docs/hpc-slurm.md) for cluster-scale campaigns)
 - **Telemetry recording** with SHA-256 integrity hashing
 - **Post-flight analysis** with trajectory plots and orbit characterization
@@ -137,6 +137,7 @@ sim/
 ├── gnc/
 │   ├── guidance.py        # Three-phase ascent guidance
 │   ├── control.py         # PID attitude controller + TVC
+│   ├── notch_filter.py    # Frequency-scheduled structural notch (flex coupling)
 │   ├── sensors.py         # IMU/GPS/Baro sensor models
 │   └── navigation.py      # Extended Kalman Filter
 ├── safety/

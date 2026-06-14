@@ -10,17 +10,22 @@ Effort: S (hours) / M (about a day) / L (multi-day or structural).
 
 ## Physics / Numerics / GNC (adversarial audit, 2026-06-14)
 
-All verified with repros in `audit/04-adversarial-findings.md`. **AD-01, AD-18,
-and AD-02, AD-03, AD-05–AD-16 are fixed** (the latter group on branch
-`claude/amazing-lamport-tn1h3b`, each with a regression test in
-`tests/test_fidelity_fixes.py` and validated against an authoritative source or a
-known-good numerical check). The two items below remain open because they need a
-dedicated control/guidance design pass, not a contained fix.
+All verified with repros in `audit/04-adversarial-findings.md`. **AD-01–AD-16
+and AD-18 are fixed** — AD-01/AD-18 and AD-02/03/05–16 in earlier passes (each
+with a regression test in `tests/test_fidelity_fixes.py`), and **AD-04 in this
+pass**: the flex model is now live in the control loop, stabilised by a
+frequency-scheduled structural notch filter (`sim/gnc/notch_filter.py`; see
+[ADR 0012](docs/adr/0012-live-flex-structural-notch.md), tests in
+`tests/test_notch_filter.py` and `tests/test_e2e_simulation.py`). **AD-17 is
+documented as an accepted simplification**: the corrections are physically
+correct and reach the target inclination, but they regress Monte-Carlo
+robustness via a pre-existing PEG attitude-margin fragility, now tracked as
+AD-19.
 
 | ID | Title | Sev | Effort | Approach | Owner role |
 |----|-------|-----|--------|----------|------------|
-| [AD-04](audit/04-adversarial-findings.md) | Flex-body model is inert; naive coupling is unstable | medium | L | A direct rate/EKF coupling FTS-aborts the vehicle (verified). Needs a frequency-scheduled structural **notch filter** (on the propellant-varying modal frequency) with gain/phase-margin analysis, then re-enable the coupling + add a flex-on≠flex-off test. | GNC/controls eng |
-| [AD-17](audit/04-adversarial-findings.md) | Launch azimuth ignores Earth-rotation inclination term | info | M | Target the rotating-frame azimuth (`atan2(v·sinAz_in − ωR cos lat, v·cosAz_in)`) so the achieved inclination matches the target (currently 45.1° vs 51.6°), or document as an accepted simplification. | GNC eng |
+| [AD-17](audit/04-adversarial-findings.md) | Launch azimuth ignores Earth-rotation inclination term | info | M | **Accepted simplification.** The rotating-frame azimuth correction *and* active out-of-plane yaw nulling were both prototyped: they reach the 51.6° target (achieved 45°→51.4°, insertion correction-dv ~995→~266 m/s) but every variant *systematically* increases dispersed FTS aborts (48-seed: 39→35 azimuth-only, worse with nulling) because the PEG terminal phase already rides the 25° attitude limit (AD-19). Re-attempt once AD-19 lands. | GNC eng |
+| [AD-19](audit/04-adversarial-findings.md) | PEG terminal phase rides the 25° FTS attitude limit under dispersions | medium | L | Discovered during the AD-17 investigation: ~19% of dispersed runs FTS-abort on a marginal thrust-axis error near insertion (every observed dispersed abort is 25.0x° — right at `FTS_ATTITUDE_LIMIT_DEG`). Harden the PEG terminal transient (smoother GT→PEG handover, command-rate vs low-propellant control authority) so the margin is real; this also unblocks AD-17. | GNC/controls eng |
 
 ## Security
 
