@@ -10,8 +10,9 @@ Effort: S (hours) / M (about a day) / L (multi-day or structural).
 
 ## Physics / Numerics / GNC (adversarial audit, 2026-06-14)
 
-All verified with repros in `audit/04-adversarial-findings.md`. AD-01 was fixed
-on this branch; the rest change nominal physics/telemetry (so they require
+All verified with repros in `audit/04-adversarial-findings.md`. AD-01 and AD-18
+(both Monte Carlo correctness bugs that the scaled-out feature depends on) were
+fixed on this branch; the rest change nominal physics/telemetry (so they require
 regenerating committed example outputs) or need a design decision, and are
 deferred to focused PRs.
 

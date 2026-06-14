@@ -38,9 +38,14 @@ DEFAULT_DISPERSIONS = [
     # Wind
     Dispersion("WIND_SPEED_MS", "truncated_gaussian", sigma=15.0, bounds=(0, 50)),
     Dispersion("WIND_DIRECTION_DEG", "uniform", sigma=None, bounds=(0, 360)),
-    # Sensors
-    Dispersion("IMU_ACCEL_BIAS_MPS2", "gaussian", sigma=0.002, bounds=None),
-    Dispersion("IMU_GYRO_BIAS_RADS", "gaussian", sigma=0.0002, bounds=None),
+    # Sensors. The IMU bias-instability terms are RMS random-walk rates consumed
+    # as the standard deviation of a Gaussian draw in the sensor model
+    # (sensors.py), so they MUST stay non-negative. They are therefore truncated
+    # (like GPS_POS_NOISE_M below) rather than plain Gaussian — an unbounded
+    # Gaussian here sampled negative ~31% of the time, crashing ~half of all
+    # Monte Carlo runs with "scale < 0" (finding AD-18).
+    Dispersion("IMU_ACCEL_BIAS_MPS2", "truncated_gaussian", sigma=0.002, bounds=(0.0001, 0.007)),
+    Dispersion("IMU_GYRO_BIAS_RADS", "truncated_gaussian", sigma=0.0002, bounds=(0.00001, 0.0007)),
     Dispersion("GPS_POS_NOISE_M", "truncated_gaussian", sigma=2.0, bounds=(1, 15)),
     # Mass
     Dispersion("S1_DRY_MASS_KG", "gaussian", sigma=222, bounds=None),

@@ -81,6 +81,17 @@ class TestGaussianAndUniform:
             sample_dispersion(Dispersion("X", "weibull", sigma=1.0), np.random.default_rng(0))
 
 
+class TestScaleParametersNonNegative:
+    """Parameters consumed as a Gaussian standard deviation (RNG scale) in the
+    sensor model must never be dispersed negative, or runs crash with
+    'scale < 0' (regression for AD-18)."""
+
+    @pytest.mark.parametrize("param", ["IMU_ACCEL_BIAS_MPS2", "IMU_GYRO_BIAS_RADS", "GPS_POS_NOISE_M"])
+    def test_scale_never_negative(self, param):
+        a = _draw(param, n=8000)
+        assert a.min() > 0.0, f"{param} dispersed to a non-positive scale (min={a.min()})"
+
+
 class TestDeterminism:
     def test_same_seed_same_config(self):
         a = generate_dispersed_config(DEFAULT_DISPERSIONS, np.random.default_rng(123))

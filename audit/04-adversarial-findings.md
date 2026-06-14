@@ -26,6 +26,7 @@ A repro for each is reproducible from the commands quoted in "Evidence".
 | ID | Sev | Title | File:line | Status |
 |----|-----|-------|-----------|--------|
 | AD-01 | critical | Truncated-Gaussian dispersions collapse to constants (2 of 4 frozen) | `sim/montecarlo/dispersions.py:60-72,93-103` | **fixed** |
+| AD-18 | high | IMU bias-instability dispersed as unbounded Gaussian → ~52% of MC runs crash (`scale < 0`) | `sim/montecarlo/dispersions.py` (sensors), `sim/gnc/sensors.py:119-120` | **fixed** |
 | AD-02 | high | Second-order TVC actuator numerically unstable at 100 Hz (limit cycle) | `sim/vehicle/actuator.py:75-84` | recorded |
 | AD-03 | medium | J3 zonal-gravity term suppressed ~1/r by an extra factor (effectively zero) | `sim/environment/gravity.py:75-77` | recorded |
 | AD-04 | medium | Flex-body model is inert — gyro coupling written after EKF reads it | `sim/main.py:392-399,449` | recorded |
@@ -75,6 +76,28 @@ This also corrected the `montecarlo/` package from **0% coverage** to tested.
 The SLURM HPC backend added in this branch runs these same dispersions, so it
 inherits the fix; its determinism guarantee (sharded == local for a seed) was
 verified after the fix.
+
+### AD-18 (high, FIXED) — IMU bias dispersion crashes ~half of all MC runs
+
+`IMU_ACCEL_BIAS_MPS2` and `IMU_GYRO_BIAS_RADS` were dispersed as **unbounded**
+Gaussians (`nominal + N(0, sigma)`), but the sensor model consumes them as the
+**standard deviation** of a Gaussian draw (`sensors.py:119-120`,
+`rng.normal(0, config.IMU_*_BIAS_* * sqrt(dt))`), which requires a non-negative
+scale. Verified over 20 000 seeds: `IMU_ACCEL_BIAS_MPS2` is negative 31.1% of the
+time and `IMU_GYRO_BIAS_RADS` 30.8%, so **52.5% of Monte Carlo runs** raise
+`ValueError: scale < 0` and are recorded as `ERROR`. Found by executing a
+generated sbatch worker script end-to-end (the unit tests passed because they use
+a stubbed simulation). Pre-existing and independent of the SLURM backend (the
+local dispatcher has the same failure rate).
+
+Fix (this branch): make both terms `truncated_gaussian` with strictly positive
+bounds — mirroring `GPS_POS_NOISE_M`, which is *already* a truncated scale
+parameter for exactly this reason. RNG draw count is unchanged, so determinism
+holds; the nominal run is unaffected (it applies no dispersions). Post-fix: 0%
+negative over 8 000 seeds (`tests/test_dispersions.py::TestScaleParametersNonNegative`).
+A complementary hardening (clamp the scale to `max(0, ·)` in `sensors.py`) is
+recommended so a future custom dispersion cannot reintroduce the crash; left to
+a focused PR as it touches the sensor model.
 
 ### AD-02 (high) — TVC actuator second-order integrator is unstable at 100 Hz
 
@@ -270,11 +293,13 @@ defect, but a targeting-fidelity gap worth noting.
 
 ## Disposition
 
-Only **AD-01** (critical, and the foundation of the Monte Carlo feature this
-branch scales out) was fixed here, with a regression test, because shipping a
-cluster-scale Monte Carlo backend over degenerate dispersions would be shipping
-a broken feature. Every other finding changes nominal physics/telemetry outputs
-(and would require regenerating committed example artifacts) or needs a
-maintainer design decision; following the discipline of the prior audit ("changed
-no physics"), they are **recorded** here and in `BACKLOG.md` with verified repros
+**AD-01** and **AD-18** were fixed here (both with regression tests) because
+they are intrinsic to the Monte Carlo subsystem this branch scales out: a
+cluster campaign over frozen dispersions (AD-01) or with ~half the runs crashing
+(AD-18) would be a broken feature. Both fixes live in `montecarlo/dispersions.py`,
+preserve the RNG draw sequence (so determinism holds), and do not touch the
+nominal run. Every other finding changes nominal physics/telemetry outputs (and
+would require regenerating committed example artifacts) or needs a maintainer
+design decision; following the discipline of the prior audit ("changed no
+physics"), they are **recorded** here and in `BACKLOG.md` with verified repros
 and concrete fixes, for separate focused PRs.
