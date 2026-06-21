@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from sim import config
-from sim.core.reference_frames import eci_to_body
+from sim.core.reference_frames import eci_to_body, quaternion_from_axis_angle, quaternion_multiply
 from sim.core.state import VehicleState
 
 # ---------------------------------------------------------------------------
@@ -60,6 +60,20 @@ class BaroMeasurement:
     """
 
     altitude_m: float
+    time_s: float
+
+
+@dataclass
+class StarTrackerMeasurement:
+    """Star-tracker attitude reading.
+
+    Attributes:
+        quaternion: Measured inertial (body->ECI) attitude, scalar-last
+            ``[x, y, z, w]``.
+        time_s: Timestamp of the measurement (s).
+    """
+
+    quaternion: np.ndarray
     time_s: float
 
 
@@ -138,13 +152,14 @@ class GPS:
 
     Updates at ``GPS_UPDATE_HZ`` (default 1 Hz).  Returns *None* when the
     current timestep is not an update epoch or when the vehicle is above the
-    COCOM altitude limit (60 km).
+    GPS availability ceiling (``config.GPS_AVAILABILITY_CEILING_M``, default
+    60 km — the COCOM export limit). Above it the upper stage is GPS-denied;
+    attitude observability there is provided by the star tracker (ADR 0020).
+    Set the ceiling to +inf to model a cleared (SAASM / M-code) receiver.
 
     Args:
         rng: NumPy random generator.
     """
-
-    COCOM_ALT_M: float = 60_000.0  # COCOM altitude limit
 
     def __init__(self, rng: np.random.Generator | None = None) -> None:
         # Use a cryptographically secure seed if no generator is provided
@@ -162,8 +177,9 @@ class GPS:
         Returns:
             GPSMeasurement or None.
         """
-        # Altitude check (COCOM limit)
-        if true_state.altitude_m() > self.COCOM_ALT_M:
+        # Availability ceiling (COCOM for a COTS receiver; +inf for a cleared
+        # launch receiver — GPS through ascent, ADR 0020).
+        if true_state.altitude_m() > config.GPS_AVAILABILITY_CEILING_M:
             return None
 
         # Rate check
@@ -242,6 +258,67 @@ class Barometer:
         return elapsed >= self._update_period_s - 1e-9
 
 
+class StarTracker:
+    """Star-tracker inertial-attitude sensor (ADR 0020).
+
+    Measures the full inertial attitude quaternion directly (arcsecond-class
+    noise) by imaging star fields. It is the attitude aid that keeps the
+    error-state EKF observable while the vehicle is GPS-denied above the COCOM
+    ceiling. Like a real unit it is usable only above the sensible atmosphere
+    (clear sky) and below a slew rate that would smear the star image — i.e. the
+    upper-stage coast/burn regime — and updates at ``STAR_TRACKER_UPDATE_HZ``.
+    Returns *None* when unavailable or off-epoch.
+
+    Args:
+        rng: NumPy random generator.
+    """
+
+    def __init__(self, rng: np.random.Generator | None = None) -> None:
+        # Use a cryptographically secure seed if no generator is provided
+        self._rng = rng if rng is not None else np.random.default_rng(secrets.randbits(128))
+        self._update_period_s: float = 1.0 / config.STAR_TRACKER_UPDATE_HZ
+        self._last_update_time_s: float = -1.0
+
+    def measure(self, true_state: VehicleState, dt: float) -> StarTrackerMeasurement | None:
+        """Return a noisy inertial-attitude fix or *None* if unavailable.
+
+        Args:
+            true_state: True vehicle state.
+            dt: Simulation timestep (s) — used only for epoch alignment.
+
+        Returns:
+            StarTrackerMeasurement or None.
+        """
+        # Availability: above the sensible atmosphere and below the slew limit.
+        if true_state.altitude_m() < config.STAR_TRACKER_MIN_ALT_M:
+            return None
+        if float(np.linalg.norm(true_state.angular_velocity_body)) > config.STAR_TRACKER_MAX_RATE_RADS:
+            return None
+        if not self._is_update_epoch(true_state.time_s):
+            return None
+
+        self._last_update_time_s = true_state.time_s
+
+        # Small-angle Gaussian attitude noise applied as an ECI-frame rotation.
+        noise = self._rng.normal(0.0, config.STAR_TRACKER_NOISE_RAD, size=3)
+        angle = float(np.linalg.norm(noise))
+        if angle > 1e-15:
+            dq = quaternion_from_axis_angle(noise / angle, angle)
+            q_meas = quaternion_multiply(dq, true_state.quaternion)
+            q_meas = q_meas / np.linalg.norm(q_meas)
+        else:
+            q_meas = true_state.quaternion.copy()
+
+        return StarTrackerMeasurement(quaternion=q_meas, time_s=true_state.time_s)
+
+    def _is_update_epoch(self, time_s: float) -> bool:
+        """Check whether *time_s* falls on a star-tracker update epoch."""
+        if self._last_update_time_s < 0.0:
+            return True
+        elapsed = time_s - self._last_update_time_s
+        return elapsed >= self._update_period_s - 1e-9
+
+
 # ---------------------------------------------------------------------------
 # Convenience bundle
 # ---------------------------------------------------------------------------
@@ -263,13 +340,14 @@ class SensorSuite:
         self.imu = IMU(rng=rng)
         self.gps = GPS(rng=rng)
         self.baro = Barometer(rng=rng)
+        self.star_tracker = StarTracker(rng=rng)
 
     def update(
         self,
         true_state: VehicleState,
         specific_force_eci_mps2: np.ndarray,
         dt: float,
-    ) -> tuple[IMUMeasurement, GPSMeasurement | None, BaroMeasurement | None]:
+    ) -> tuple[IMUMeasurement, GPSMeasurement | None, BaroMeasurement | None, StarTrackerMeasurement | None]:
         """Poll every sensor and return measurements (None if unavailable).
 
         Args:
@@ -279,9 +357,10 @@ class SensorSuite:
             dt: Physics timestep (s).
 
         Returns:
-            Tuple of (imu, gps_or_none, baro_or_none).
+            Tuple of (imu, gps_or_none, baro_or_none, star_tracker_or_none).
         """
         imu_meas = self.imu.measure(true_state, specific_force_eci_mps2, dt)
         gps_meas = self.gps.measure(true_state, dt)
         baro_meas = self.baro.measure(true_state, dt)
-        return imu_meas, gps_meas, baro_meas
+        star_meas = self.star_tracker.measure(true_state, dt)
+        return imu_meas, gps_meas, baro_meas, star_meas

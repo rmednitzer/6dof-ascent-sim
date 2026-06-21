@@ -234,6 +234,7 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
     peak_q = 0.0
     peak_axial_g = 0.0
     peak_ekf_uncertainty = 0.0
+    peak_attitude_est_error_deg = 0.0
     last_print_time = -10.0
 
     dt = config.DT
@@ -272,6 +273,12 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
         # --- Guidance ---
         estimated_state = ekf.estimated_state()
         estimated_state.time_s = t
+        # Attitude authority (ADR 0020): with USE_ESTIMATED_ATTITUDE off, guidance
+        # and the controller run on the true attitude (the error-state EKF still
+        # estimates attitude in parallel, for validation/telemetry); with it on,
+        # they consume the EKF's estimated attitude.
+        if not config.USE_ESTIMATED_ATTITUDE:
+            estimated_state.quaternion = true_state.quaternion.copy()
         guidance_cmd = guidance.update(estimated_state)
 
         # --- Engine update (get thrust/mdot for this step) ---
@@ -368,13 +375,14 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
 
         # --- Sensor measurements ---
         # IMU senses specific force (non-gravitational accel), not gravity.
-        imu_meas, gps_meas, baro_meas = sensors.update(true_state, prev_specific_force_eci, dt)
+        imu_meas, gps_meas, baro_meas, star_meas = sensors.update(true_state, prev_specific_force_eci, dt)
 
         # --- Navigation (EKF) ---
-        # EKF uses the raw IMU measurement (without flex body contamination)
-        # because coning/sculling compensation cross products amplify
-        # structural vibration signals that are not true rigid-body rotations.
-        ekf.set_attitude(true_state.quaternion, true_state.angular_velocity_body)
+        # The error-state EKF estimates attitude itself, propagating the nominal
+        # quaternion from the measured gyro (ADR 0020) — it is no longer handed
+        # the true attitude. It still consumes the raw IMU (no flex
+        # contamination: coning/sculling cross-products would amplify structural
+        # vibration that is not true rigid-body rotation).
         ekf.set_mass(true_state.mass_kg)
         ekf.predict(imu_meas, grav_eci, dt)
 
@@ -387,9 +395,20 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
             ekf.update_gps(gps_meas)
         if baro_meas is not None:
             ekf.update_baro(baro_meas)
+        # Star tracker keeps attitude observable above the COCOM GPS ceiling
+        # (ADR 0020): it bounds the attitude error through the GPS-denied upper
+        # stage, so the attitude→velocity→position covariance coupling does not
+        # trip the FTS limit.
+        if star_meas is not None:
+            ekf.update_star_tracker(star_meas)
 
         ekf_uncertainty = ekf.position_uncertainty_m()
         peak_ekf_uncertainty = max(peak_ekf_uncertainty, ekf_uncertainty)
+
+        # Attitude-estimation error (estimated vs true), for validation/telemetry.
+        dot_q = abs(float(np.dot(ekf.quaternion, true_state.quaternion)))
+        attitude_est_error_deg = math.degrees(2.0 * math.acos(min(1.0, dot_q)))
+        peak_attitude_est_error_deg = max(peak_attitude_est_error_deg, attitude_est_error_deg)
 
         # --- FTS check ---
         fts_triggered = fts.evaluate(
@@ -665,6 +684,7 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
         )
         if not quiet:
             _print_summary(summary, orbit_elements_dict)
+            print(f"Peak attitude est error (EKF vs truth): {peak_attitude_est_error_deg:.3f} deg")
             # Generate plots
             try:
                 from sim.analysis.postflight import generate_plots

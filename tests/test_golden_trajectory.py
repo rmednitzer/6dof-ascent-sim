@@ -36,21 +36,28 @@ class TestNominalGolden:
     """Pin the nominal-run summary to a committed golden baseline.
 
     Baseline captured 2026-06-21 after the chi-square innovation gate (ADR
-    0013) and FTS attitude hysteresis (ADR 0014) landed. If a deliberate
-    physics/GNC change moves these, update the golden values here together with
-    the committed example artifacts (``examples/output/``), per BACKLOG D-06.
+    0013) and FTS attitude hysteresis (ADR 0014) landed; rebaselined 2026-06-22
+    for the error-state attitude EKF + star-tracker attitude aiding (ADR 0020).
+    The trajectory is essentially unchanged (control still tracks the true
+    attitude in Stage 1) — the one move of note is ``peak_ekf_uncertainty_m``
+    (≈982 m → ≈1700 m): attitude is now *estimated* (star-tracker-aided through
+    the GPS-denied upper stage) rather than truth-fed, so the position
+    dead-reckoning covariance is a little larger, but still far below the 10 km
+    FTS limit. If a deliberate physics/GNC change moves these, update the golden
+    values here together with the committed example artifacts
+    (``examples/output/``), per BACKLOG D-06.
     """
 
     # Golden summary of the deterministic nominal run (seed 0).
     _GOLD = {
         "outcome": "SUCCESS",
-        "insertion_altitude_m": 407_297.1,
-        "insertion_velocity_ms": 7_603.5,
-        "insertion_fpa_deg": 0.810,
-        "peak_q_pa": 32_449.6,
+        "insertion_altitude_m": 407_585.4,
+        "insertion_velocity_ms": 7_603.3,
+        "insertion_fpa_deg": 0.811,
+        "peak_q_pa": 32_449.4,
         "peak_axial_g": 5.40,
-        "peak_ekf_uncertainty_m": 981.7,
-        "boundary_clamp_count": 252,
+        "peak_ekf_uncertainty_m": 1_699.5,
+        "boundary_clamp_count": 251,
         "total_time_s": 487.9,
     }
 

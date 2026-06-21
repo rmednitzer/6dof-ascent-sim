@@ -25,7 +25,7 @@ sim/
   gnc/
     guidance.py               # Three-phase guidance law
     control.py                # PID attitude controller with TVC output
-    navigation.py             # 12-state EKF (pos, vel, accel bias, gyro bias)
+    navigation.py             # 15-error-state EKF (attitude, pos, vel, accel bias, gyro bias)
     sensors.py                # IMU, GPS, barometer sensor models
   safety/
     boundary_enforcer.py      # Clamps throttle, TVC deflection, slew rate; checks structural limits
@@ -122,11 +122,12 @@ PID attitude controller operating on the vector part of the error quaternion (sm
 
 ### Navigation (`sim/gnc/navigation.py`)
 
-12-state EKF estimating `[pos(3), vel(3), accel_bias(3), gyro_bias(3)]` in ECI. Predict at 100 Hz via strapdown IMU mechanization. Updates:
-- GPS at `GPS_UPDATE_HZ` (1 Hz), available below 60 km (COCOM limit)
+15-error-state multiplicative EKF (ADR 0020) estimating `[pos(3), vel(3), accel_bias(3), gyro_bias(3)]` plus a nominal attitude quaternion with a 3-DOF multiplicative attitude error `δθ` in the covariance. Predict at 100 Hz via strapdown IMU mechanization (Savage coning/sculling); attitude propagates from the *measured* gyro and is corrected multiplicatively with an error-state reset. Updates:
+- GPS at `GPS_UPDATE_HZ` (1 Hz), available below `GPS_AVAILABILITY_CEILING_M` (default 60 km — the COCOM limit; `+∞` models a cleared receiver)
 - Barometer at `BARO_UPDATE_HZ` (10 Hz), available below 40 km
+- Star tracker at `STAR_TRACKER_UPDATE_HZ` (5 Hz), available above `STAR_TRACKER_MIN_ALT_M` (~100 km) and below a slew-rate limit — a direct 3-DOF inertial-attitude update for the GPS-denied upper stage
 
-Innovation gate rejects a measurement when its normalised innovation squared (NIS = `yᵀ S⁻¹ y`) exceeds the chi-square quantile at `EKF_INNOVATION_GATE_P` — a Mahalanobis test over the full innovation covariance, replacing the earlier per-component `|yᵢ| > kσᵢ` diagonal test. Non-finite innovations are rejected as a counted fault. Covariance update uses Joseph form. **Attitude is not estimated by the EKF** -- it is passed in directly via `set_attitude()` from the true state.
+Below the GPS ceiling attitude is observable through the specific-force/velocity coupling (`δv̇ = -[f_n]_x δθ`); above it the star tracker observes attitude directly (all three axes, including roll about the thrust axis, which the coupling cannot). The innovation gate rejects a measurement when its normalised innovation squared (NIS = `yᵀ S⁻¹ y`) exceeds the chi-square quantile at `EKF_INNOVATION_GATE_P` — a Mahalanobis test over the full innovation covariance, replacing the earlier per-component `|yᵢ| > kσᵢ` diagonal test. Non-finite innovations are rejected as a counted fault. Covariance update uses Joseph form. The `USE_ESTIMATED_ATTITUDE` flag selects whether guidance/control/FTS consume the estimated attitude (full closed-loop realism) or the true attitude while the estimator runs in parallel.
 
 ## Structural Dynamics
 
