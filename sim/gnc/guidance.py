@@ -392,7 +392,12 @@ class GuidanceLaw:
 
         T = self._peg_T if self._peg_initialized else max(10.0, delta_vt / max(a_thrust, 0.1))
 
-        # PEG iteration (3 iterations for convergence)
+        # PEG iteration (3 iterations for convergence). Seed A/B from the last
+        # converged coefficients so they are always bound: if the loop
+        # degenerates (an early `break` before the solve), we keep the previous
+        # values instead of catching UnboundLocalError after the fact (Q-05).
+        A = self._peg_A
+        B = self._peg_B
         for _ in range(3):
             if T < 1.0:
                 T = 1.0
@@ -464,12 +469,10 @@ class GuidanceLaw:
                     T_new = min(T_new, T_max)
                     T = 0.6 * T + 0.4 * max(1.0, T_new)
 
-        # Store converged values
-        try:
-            self._peg_A = float(np.clip(A, -0.95, 0.95))
-            self._peg_B = float(np.clip(B, -0.5, 0.5))
-        except UnboundLocalError:
-            pass  # Keep previous values if iteration didn't complete
+        # Store converged values (A/B are always bound — seeded above, so a
+        # degenerate iteration simply re-stores the previous clamped values).
+        self._peg_A = float(np.clip(A, -0.95, 0.95))
+        self._peg_B = float(np.clip(B, -0.5, 0.5))
         self._peg_T = max(1.0, T)
         self._peg_initialized = True
 

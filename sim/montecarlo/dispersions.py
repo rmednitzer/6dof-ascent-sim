@@ -75,11 +75,14 @@ def sample_dispersion(dispersion: Dispersion, rng: np.random.Generator) -> float
         (for uniform).
     """
     if dispersion.distribution == "gaussian":
+        assert dispersion.sigma is not None, "gaussian dispersion requires sigma"
         return float(rng.normal(0.0, dispersion.sigma))
     elif dispersion.distribution == "uniform":
+        assert dispersion.bounds is not None, "uniform dispersion requires bounds"
         low, high = dispersion.bounds
         return float(rng.uniform(low, high))
     elif dispersion.distribution == "truncated_gaussian":
+        assert dispersion.sigma is not None, "truncated_gaussian dispersion requires sigma"
         return float(rng.normal(0.0, dispersion.sigma))
     else:
         raise ValueError(f"Unknown distribution: {dispersion.distribution}")
