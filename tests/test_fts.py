@@ -115,23 +115,74 @@ class TestFTSCrossRange:
         assert fts.evaluate(**args) is False
 
 
-class TestFTSAttitude:
-    """FTS should trigger for excessive attitude error."""
+def _q_thrust_axis_error(deg: float) -> np.ndarray:
+    """Quaternion whose body +X (thrust axis) is rotated *deg* about body Z."""
+    half = math.radians(deg) / 2.0
+    return np.array([0.0, 0.0, math.sin(half), math.cos(half)])
 
-    def test_attitude_violation_triggers(self):
-        """A large thrust-axis pointing error should trigger FTS."""
+
+class TestFTSAttitude:
+    """FTS attitude criterion is hysteresis-gated (ADR 0014, audit AD-19)."""
+
+    def test_single_frame_violation_does_not_trigger(self):
+        """A single marginal-frame thrust-axis excursion is debounced."""
         be = BoundaryEnforcer()
         fts = FlightTerminationSystem(be)
+        assert fts._attitude_hysteresis_s > 0.0  # default is non-zero
 
         args = _nominal_args()
-        # 90 deg rotation about body Z: thrust axis (+X) swings to +Y,
-        # i.e. 90 deg of thrust-axis divergence (>> 25 deg limit).
-        half = math.radians(45.0)
-        args["q_actual"] = np.array([0.0, 0.0, math.sin(half), math.cos(half)])
+        args["q_actual"] = _q_thrust_axis_error(90.0)  # 90 deg >> 25 deg limit
         args["q_desired"] = np.array([0.0, 0.0, 0.0, 1.0])
 
-        triggered = fts.evaluate(**args)
+        # One frame over the limit: not yet persisted -> no trigger.
+        assert fts.evaluate(**args) is False
+        assert fts.fts_triggered is False
+
+    def test_sustained_violation_triggers_after_hysteresis(self):
+        """A sustained thrust-axis violation trips after the hysteresis window."""
+        be = BoundaryEnforcer()
+        fts = FlightTerminationSystem(be)
+        q_bad = _q_thrust_axis_error(90.0)
+        dt = config.DT
+        n = int(fts._attitude_hysteresis_s / dt) + 2
+
+        triggered = False
+        for i in range(n):
+            args = _nominal_args()
+            args["q_actual"] = q_bad
+            args["sim_time"] = i * dt
+            triggered = fts.evaluate(**args)
+            if triggered:
+                break
+
         assert triggered is True
+        assert "Attitude" in fts.state.reason
+
+    def test_intermittent_violation_never_accumulates(self):
+        """A violation that clears between frames never reaches the trip time."""
+        be = BoundaryEnforcer()
+        fts = FlightTerminationSystem(be)
+        q_bad = _q_thrust_axis_error(90.0)
+        q_ok = np.array([0.0, 0.0, 0.0, 1.0])
+        dt = config.DT
+
+        for i in range(200):  # 2 s, ten hysteresis windows
+            args = _nominal_args()
+            args["q_actual"] = q_bad if (i % 2 == 0) else q_ok
+            args["sim_time"] = i * dt
+            assert fts.evaluate(**args) is False
+
+        assert fts.fts_triggered is False
+
+    def test_hysteresis_zero_is_instantaneous(self):
+        """FTS_ATTITUDE_HYSTERESIS_S = 0 recovers the original instant trip."""
+        be = BoundaryEnforcer()
+        fts = FlightTerminationSystem(be)
+        fts._attitude_hysteresis_s = 0.0  # back-compatible setting
+
+        args = _nominal_args()
+        args["q_actual"] = _q_thrust_axis_error(90.0)
+        assert fts.evaluate(**args) is True
         assert "Attitude" in fts.state.reason
 
     def test_small_attitude_error_no_trigger(self):

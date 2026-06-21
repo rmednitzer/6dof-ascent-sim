@@ -126,7 +126,7 @@ PID attitude controller operating on the vector part of the error quaternion (sm
 - GPS at `GPS_UPDATE_HZ` (1 Hz), available below 60 km (COCOM limit)
 - Barometer at `BARO_UPDATE_HZ` (10 Hz), available below 40 km
 
-Innovation gate rejects measurements exceeding `EKF_RESIDUAL_SIGMA_THRESHOLD` sigma. Covariance update uses Joseph form. **Attitude is not estimated by the EKF** -- it is passed in directly via `set_attitude()` from the true state.
+Innovation gate rejects a measurement when its normalised innovation squared (NIS = `yᵀ S⁻¹ y`) exceeds the chi-square quantile at `EKF_INNOVATION_GATE_P` — a Mahalanobis test over the full innovation covariance, replacing the earlier per-component `|yᵢ| > kσᵢ` diagonal test. Non-finite innovations are rejected as a counted fault. Covariance update uses Joseph form. **Attitude is not estimated by the EKF** -- it is passed in directly via `set_attitude()` from the true state.
 
 ## Structural Dynamics
 

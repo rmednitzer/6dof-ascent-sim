@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from sim import config
 from sim.config import (
     FTS_ATTITUDE_LIMIT_DEG,
     FTS_COVARIANCE_LIMIT_M,
@@ -58,6 +59,15 @@ class FlightTerminationSystem:
     def __init__(self, boundary_enforcer: BoundaryEnforcer) -> None:
         self.state = FTSState()
         self._boundary_enforcer = boundary_enforcer
+        # Attitude-criterion hysteresis (audit AD-19 mitigation): the sim_time
+        # at which the thrust-axis error first crossed the limit in the current
+        # run of violations, or None when the attitude is within limits. The
+        # criterion only contributes an abort once the violation has persisted
+        # for FTS_ATTITUDE_HYSTERESIS_S. Captured from config at construction so
+        # the main loop and tests get a stable value (FTS limits are not
+        # dispersed in Monte Carlo).
+        self._attitude_hysteresis_s: float = config.FTS_ATTITUDE_HYSTERESIS_S
+        self._attitude_violation_start_s: float | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -115,11 +125,27 @@ class FlightTerminationSystem:
         if altitude_m < 100_000.0 and abs(crossrange_m) > FTS_CROSSRANGE_LIMIT_M:
             reasons.append(f"Cross-range deviation {crossrange_m:.1f} m exceeds limit {FTS_CROSSRANGE_LIMIT_M:.1f} m")
 
-        # 2. Attitude error
+        # 2. Attitude error — hysteresis-gated (audit AD-19). The thrust-axis
+        # error must stay above the limit continuously for
+        # FTS_ATTITUDE_HYSTERESIS_S before it contributes an abort; a single
+        # marginal-frame excursion is debounced, a sustained loss of control
+        # still trips. With hysteresis 0.0 this reduces to the original
+        # instantaneous test (elapsed 0.0 >= 0.0 on the first violating frame).
         attitude_err_deg = self._compute_attitude_error(q_actual, q_desired)
         evidence["attitude_error_deg"] = attitude_err_deg
         if attitude_err_deg > FTS_ATTITUDE_LIMIT_DEG:
-            reasons.append(f"Attitude error {attitude_err_deg:.2f} deg exceeds limit {FTS_ATTITUDE_LIMIT_DEG:.1f} deg")
+            if self._attitude_violation_start_s is None:
+                self._attitude_violation_start_s = sim_time
+            persisted_s = sim_time - self._attitude_violation_start_s
+            evidence["attitude_violation_persisted_s"] = persisted_s
+            if persisted_s >= self._attitude_hysteresis_s:
+                reasons.append(
+                    f"Attitude error {attitude_err_deg:.2f} deg exceeds limit "
+                    f"{FTS_ATTITUDE_LIMIT_DEG:.1f} deg for {persisted_s:.2f} s"
+                )
+        else:
+            # Within limits — reset the persistence clock.
+            self._attitude_violation_start_s = None
 
         # 3. EKF position uncertainty (largest 1-sigma)
         pos_uncertainty_m = self._compute_position_uncertainty(ekf_pos_covariance)

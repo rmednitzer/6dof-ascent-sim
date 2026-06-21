@@ -206,3 +206,74 @@ class TestEKFSetters:
         ekf = NavigationEKF(_make_initial_state())
         ekf.set_mass(12345.0)
         assert ekf.estimated_state().mass_kg == 12345.0
+
+
+class TestEKFInnovationGate:
+    """Verify the chi-square (NIS) innovation-consistency gate (ADR 0013)."""
+
+    def test_zero_innovation_accepted_nis_zero(self):
+        """A measurement at the estimate has NIS 0 and is accepted."""
+        state = _make_initial_state()
+        ekf = NavigationEKF(state)
+        gps = GPSMeasurement(
+            position_eci_m=ekf.state_vector[0:3].copy(),
+            velocity_eci_ms=ekf.state_vector[3:6].copy(),
+            time_s=0.0,
+        )
+        ekf.update_gps(gps)
+        assert ekf.last_nis == 0.0
+        assert ekf.measurement_rejections == 0
+
+    def test_in_family_measurement_accepted_and_moves_state(self):
+        """A small, consistent offset passes the gate and nudges the state."""
+        state = _make_initial_state()
+        ekf = NavigationEKF(state)
+        before = ekf.state_vector.copy()
+        gps = GPSMeasurement(
+            position_eci_m=state.position_eci + np.array([1.0, 0.0, 0.0]),
+            velocity_eci_ms=state.velocity_eci.copy(),
+            time_s=0.0,
+        )
+        ekf.update_gps(gps)
+        assert ekf.measurement_rejections == 0
+        # State pulled toward the measurement along +x.
+        assert ekf.state_vector[0] > before[0]
+
+    def test_gross_outlier_rejected_and_counted(self):
+        """A 10 km position outlier is rejected; the state is untouched."""
+        state = _make_initial_state()
+        ekf = NavigationEKF(state)
+        before = ekf.state_vector.copy()
+        gps = GPSMeasurement(
+            position_eci_m=state.position_eci + np.array([1.0e4, 1.0e4, 1.0e4]),
+            velocity_eci_ms=state.velocity_eci.copy(),
+            time_s=0.0,
+        )
+        ekf.update_gps(gps)
+        assert ekf.measurement_rejections == 1
+        npt.assert_array_equal(ekf.state_vector, before)
+
+    def test_non_finite_measurement_rejected(self):
+        """A NaN measurement is rejected as a counted fault, not ingested."""
+        state = _make_initial_state()
+        ekf = NavigationEKF(state)
+        before = ekf.state_vector.copy()
+        gps = GPSMeasurement(
+            position_eci_m=state.position_eci + np.array([np.nan, 0.0, 0.0]),
+            velocity_eci_ms=state.velocity_eci.copy(),
+            time_s=0.0,
+        )
+        ekf.update_gps(gps)
+        assert ekf.measurement_rejections == 1
+        npt.assert_array_equal(ekf.state_vector, before)
+        assert np.all(np.isfinite(ekf.covariance))
+
+    def test_gate_uses_full_covariance_threshold(self):
+        """The 1-DOF gate threshold reproduces the old ~3-sigma intent."""
+        from sim.gnc.navigation import _nis_gate_threshold
+
+        # chi2.ppf(0.9973, 1) == 3.0**2 (the previous per-component 3-sigma gate).
+        npt.assert_allclose(_nis_gate_threshold(1, config.EKF_INNOVATION_GATE_P), 3.0**2, atol=0.02)
+        # Higher dimension -> larger joint threshold.
+        p = config.EKF_INNOVATION_GATE_P
+        assert _nis_gate_threshold(6, p) > _nis_gate_threshold(1, p)

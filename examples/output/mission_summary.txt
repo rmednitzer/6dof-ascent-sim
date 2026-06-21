@@ -18,9 +18,9 @@ Peak Mach:             11.6
 
 Safety
 --------------------------------------------------
-Boundary violations:   253
+Boundary violations:   252
 FTS triggered:         False
 Health status:         WARNING
 
-Telemetry frames:      48791 (internal), 4880 (downlink)
-Telemetry hash:        9cd276bfc50ec7873f58c4903ca2e90c779bb9ab0bc84f1595835a336aefba8d
+Telemetry frames:      48790 (internal), 4879 (downlink)
+Telemetry hash:        04c587e4ba0a1c7173036c49059793effcce843c8c11b413e7b60a339116f969

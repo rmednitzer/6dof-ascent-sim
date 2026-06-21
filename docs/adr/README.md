@@ -11,7 +11,9 @@ rather than invented. `0006` documents an audit fix. `0007`-`0009` are
 `proposed` and need a maintainer decision (see `BACKLOG.md`). `0010` documents
 the experimental SLURM HPC Monte Carlo backend; `0011` documents the verified
 zonal-harmonic gravity rewrite and `0012` the live flex/control coupling with a
-structural notch filter, both from the 2026-06-14 fidelity pass.
+structural notch filter, both from the 2026-06-14 fidelity pass. `0013` (NIS
+innovation gating) and `0014` (FTS attitude hysteresis) are GNC-robustness
+changes from the 2026-06-21 cross-repo lessons pass (`audit/05`).
 
 | ADR | Title | Status |
 |-----|-------|--------|
@@ -27,3 +29,5 @@ structural notch filter, both from the 2026-06-14 fidelity pass.
 | [0010](0010-slurm-hpc-monte-carlo.md) | SLURM HPC Monte Carlo via job array + shard/collect | accepted (experimental) |
 | [0011](0011-verified-zonal-gravity.md) | Zonal-harmonic gravity via the verified analytic geopotential gradient | accepted |
 | [0012](0012-live-flex-structural-notch.md) | Live flex/control coupling stabilised by a frequency-scheduled structural notch | accepted |
+| [0013](0013-chi-square-innovation-gating.md) | Chi-square (NIS) innovation gating in the navigation EKF | accepted |
+| [0014](0014-fts-attitude-hysteresis.md) | Hysteresis on the FTS attitude criterion | accepted |

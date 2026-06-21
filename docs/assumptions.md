@@ -63,7 +63,7 @@
 - **Attitude is not estimated by the EKF** (`sim/gnc/navigation.py`). The true quaternion and angular velocity are passed directly to the filter via `set_attitude()`. This means attitude determination errors (star tracker, gyro integration drift) are not modeled.
 - The 12-state EKF estimates position, velocity, accelerometer bias, and gyro bias. Biases are modeled as random walks.
 - **GPS available below 60 km only** (COCOM limit). **Barometer available below 40 km only**.
-- Innovation gating at `EKF_RESIDUAL_SIGMA_THRESHOLD = 3.0` sigma rejects outliers but can reject valid measurements during rapid maneuvering.
+- Innovation gating uses a chi-square (NIS) consistency test: a measurement is rejected when its normalised innovation squared `yᵀ S⁻¹ y` exceeds the chi-square quantile at `EKF_INNOVATION_GATE_P = 0.9973` for its dimension (Mahalanobis distance over the full innovation covariance). At one DOF this matches the previous 3-sigma intent; for multi-component GPS it is the principled joint test rather than a per-axis magnitude check. A non-finite innovation/covariance is rejected as a counted fault (`measurement_rejections`). Gating can still reject valid measurements during rapid maneuvering.
 
 ## Sensors
 
