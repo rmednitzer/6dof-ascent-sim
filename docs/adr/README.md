@@ -35,3 +35,4 @@ changes from the 2026-06-21 cross-repo lessons pass (`audit/05`).
 | [0016](0016-validated-config-override-schema.md) | Validated Monte-Carlo override schema (ADR-0009 step 1) | accepted |
 | [0017](0017-defer-numba-jit-profile-driven.md) | Evaluate numba-JIT for the hot loop; defer (profile-driven) | accepted |
 | [0018](0018-context-local-overridable-config.md) | Context-local overridable config (ADR-0009 step 2; supersedes ADR-0004 override) | accepted |
+| [0019](0019-defer-vectorized-monte-carlo.md) | Defer vectorized Monte Carlo (X-14) — spike evidence | accepted |
