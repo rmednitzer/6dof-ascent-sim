@@ -33,3 +33,4 @@ changes from the 2026-06-21 cross-repo lessons pass (`audit/05`).
 | [0014](0014-fts-attitude-hysteresis.md) | Hysteresis on the FTS attitude criterion | accepted |
 | [0015](0015-adopt-pyright-type-checking.md) | Adopt pyright for static type checking (production code) | accepted |
 | [0016](0016-validated-config-override-schema.md) | Validated Monte-Carlo override schema (ADR-0009 step 1) | accepted |
+| [0017](0017-defer-numba-jit-profile-driven.md) | Evaluate numba-JIT for the hot loop; defer (profile-driven) | accepted |
