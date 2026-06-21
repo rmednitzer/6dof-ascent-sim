@@ -130,7 +130,7 @@ def plane_change_dv(state: VehicleState, target_inclination_deg: float) -> float
 
     # Cosine rule: dv = 2 * v * sin(delta_i / 2)
     dv = 2.0 * v * math.sin(delta_inc / 2.0)
-    return dv
+    return float(dv)
 
 
 def total_correction_budget(

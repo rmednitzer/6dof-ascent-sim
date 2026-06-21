@@ -31,3 +31,4 @@ changes from the 2026-06-21 cross-repo lessons pass (`audit/05`).
 | [0012](0012-live-flex-structural-notch.md) | Live flex/control coupling stabilised by a frequency-scheduled structural notch | accepted |
 | [0013](0013-chi-square-innovation-gating.md) | Chi-square (NIS) innovation gating in the navigation EKF | accepted |
 | [0014](0014-fts-attitude-hysteresis.md) | Hysteresis on the FTS attitude criterion | accepted |
+| [0015](0015-adopt-pyright-type-checking.md) | Adopt pyright for static type checking (production code) | accepted |

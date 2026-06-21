@@ -162,15 +162,15 @@ class OrbitPropagator:
         periapsis_alt_km = (r_periapsis - EARTH_RADIUS_M) / 1000.0
 
         self._elements = OrbitalElements(
-            semi_major_axis_m=a,
-            eccentricity=e,
+            semi_major_axis_m=float(a),
+            eccentricity=float(e),
             inclination_deg=math.degrees(inc),
             raan_deg=math.degrees(raan),
             arg_periapsis_deg=math.degrees(arg_pe),
             true_anomaly_deg=math.degrees(nu),
-            period_s=period,
-            apoapsis_alt_km=apoapsis_alt_km,
-            periapsis_alt_km=periapsis_alt_km,
+            period_s=float(period),
+            apoapsis_alt_km=float(apoapsis_alt_km),
+            periapsis_alt_km=float(periapsis_alt_km),
         )
         return self._elements
 
@@ -295,9 +295,9 @@ class OrbitPropagator:
         dict
             Orbital element values and derived parameters.
         """
-        if self._elements is None:
-            self.state_to_elements()
         el = self._elements
+        if el is None:
+            el = self.state_to_elements()
 
         return {
             "semi_major_axis_km": el.semi_major_axis_m / 1000.0,
