@@ -570,30 +570,28 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
         total_force_eci = thrust_eci + aero_result.drag_force_eci + aero_normal_eci + slosh_force_eci
         prev_specific_force_eci = total_force_eci / max(true_state.mass_kg, 1.0)
 
-        # Create derivatives closure
-        _thrust_eci = thrust_eci
+        # Create derivatives closure. The total translational force and the
+        # angular acceleration are zero-order-held across the four RK4 sub-stages
+        # (ADR 0003), so precompute them ONCE instead of re-summing the four
+        # force vectors and re-dividing torque/inertia on every sub-stage call.
+        # Reuses total_force_eci already summed above for the IMU; bit-identical
+        # to the previous per-call computation (same operands, same order).
         _grav_eci = grav_eci
-        _drag_eci = aero_result.drag_force_eci
-        _aero_normal_eci = aero_normal_eci
-        _slosh_eci = slosh_force_eci
-        _torque = total_torque
-        _inertia = inertia
+        _total_force_eci = total_force_eci
+        _angular_accel = total_torque / inertia
         _mass_rate = actual_mdot
-        _mass = true_state.mass_kg
 
         def derivatives_fn(  # noqa: B023
             t_eval: float,
             s: VehicleState,
         ) -> StateDot:
-            total_force = _thrust_eci + _drag_eci + _aero_normal_eci + _slosh_eci
-            accel = _grav_eci + total_force / max(s.mass_kg, 1.0)
-            angular_accel = _torque / _inertia
+            accel = _grav_eci + _total_force_eci / max(s.mass_kg, 1.0)
             quat_dot = quaternion_derivative(s.quaternion, s.angular_velocity_body)
             return StateDot(
                 velocity_eci=s.velocity_eci,
                 acceleration_eci=accel,
                 quaternion_dot=quat_dot,
-                angular_acceleration_body=angular_accel,
+                angular_acceleration_body=_angular_accel,
                 mass_rate_kg_s=_mass_rate,
             )
 
