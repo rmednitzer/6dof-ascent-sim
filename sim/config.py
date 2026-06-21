@@ -92,7 +92,15 @@ GPS_VEL_NOISE_MS = 0.1  # GPS velocity noise (m/s)
 GPS_UPDATE_HZ = 1  # GPS update rate
 BARO_ALT_NOISE_M = 10.0  # Barometer noise (m)
 BARO_UPDATE_HZ = 10  # Barometer update rate
-EKF_RESIDUAL_SIGMA_THRESHOLD = 3.0  # Innovation gate (sigma)
+# Innovation-consistency gate. A measurement is rejected when its normalised
+# innovation squared (NIS = yᵀ S⁻¹ y, a chi-square statistic with one DOF per
+# measurement component) exceeds the chi-square quantile at this tail
+# probability. This Mahalanobis test accounts for the full innovation
+# covariance S; it replaces the earlier per-component |yᵢ| > kσᵢ test, which
+# used only the diagonal of S and ignored cross-covariance. At one DOF this
+# reproduces the old 3-sigma intent exactly: 0.9973 = P(|N(0,1)| < 3), so
+# chi2.ppf(0.9973, 1) = 3.0² = 9.0 (the previous per-component gate on baro).
+EKF_INNOVATION_GATE_P = 0.9973  # chi-square tail probability for the NIS gate
 
 # ---------- FTS abort criteria ----------
 FTS_CROSSRANGE_LIMIT_M = 200_000  # Max cross-range deviation
@@ -102,6 +110,17 @@ FTS_CROSSRANGE_LIMIT_M = 200_000  # Max cross-range deviation
 # Nominal flight tracks to <5 deg, so 25 deg is protective without
 # false-tripping. The old 90 deg never tripped before total loss.
 FTS_ATTITUDE_LIMIT_DEG = 25.0  # Max thrust-axis pointing error (deg)
+# Hysteresis (debounce) on the attitude criterion only: the thrust-axis error
+# must exceed FTS_ATTITUDE_LIMIT_DEG *continuously* for this long before the FTS
+# triggers on it. A single-sample marginal excursion — the dominant dispersed
+# Monte-Carlo abort signature, where every observed abort is a ~25.0x° hit right
+# at the limit during the PEG terminal phase (audit AD-19) — is filtered, while
+# a genuine sustained loss of control still trips after a brief fixed delay.
+# Set to 0.0 to recover the original instantaneous behaviour. The cross-range,
+# covariance, and structural criteria remain instantaneous. This is an
+# FTS-side mitigation and does NOT replace the AD-19 PEG terminal-guidance
+# hardening (a separate control-design task).
+FTS_ATTITUDE_HYSTERESIS_S = 0.2  # seconds (~20 frames at 100 Hz); 0.0 = instantaneous
 FTS_COVARIANCE_LIMIT_M = 10_000  # Max EKF position uncertainty
 
 # ---------- Flex body — first 3 lateral bending modes ----------

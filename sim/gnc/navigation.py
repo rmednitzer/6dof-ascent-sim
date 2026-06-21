@@ -25,14 +25,29 @@ References:
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 import numpy as np
+from scipy.stats import chi2
 
 from sim import config
 from sim.core.fast_math import cross3
 from sim.core.reference_frames import quat_to_dcm
 from sim.core.state import VehicleState
 from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement
+
+
+@lru_cache(maxsize=16)
+def _nis_gate_threshold(dim: int, gate_p: float) -> float:
+    """Chi-square quantile used by the EKF innovation-consistency (NIS) gate.
+
+    The normalised innovation squared ``yᵀ S⁻¹ y`` is chi-square distributed
+    with ``dim`` degrees of freedom under the filter-consistency hypothesis;
+    a measurement is rejected when it exceeds the ``gate_p`` quantile.  Cached
+    because only a couple of (dim, gate_p) pairs ever occur (GPS dim 6, baro
+    dim 1) and ``chi2.ppf`` is comparatively expensive.
+    """
+    return float(chi2.ppf(gate_p, dim))
 
 
 class NavigationEKF:
@@ -93,6 +108,12 @@ class NavigationEKF:
         self._F: np.ndarray = np.eye(self.N_STATES)
         self._Q: np.ndarray = np.zeros((self.N_STATES, self.N_STATES))
         self._I3: np.ndarray = np.eye(3)
+
+        # Innovation-gate diagnostics (no telemetry-schema impact; useful for
+        # Monte-Carlo health analysis): count of measurements rejected by the
+        # NIS gate / non-finite guard, and the most recent NIS value.
+        self.measurement_rejections: int = 0
+        self.last_nis: float = 0.0
 
     # -- public properties ---------------------------------------------------
 
@@ -319,10 +340,15 @@ class NavigationEKF:
         H: np.ndarray,
         R: np.ndarray,
     ) -> None:
-        """Run the Kalman update with innovation gating.
+        """Run the Kalman update with a chi-square innovation-consistency gate.
 
-        Rejects the measurement if any component of the normalised residual
-        exceeds ``EKF_RESIDUAL_SIGMA_THRESHOLD``.
+        Rejects the measurement when its normalised innovation squared
+        (``NIS = yᵀ S⁻¹ y``) exceeds the chi-square quantile at
+        ``EKF_INNOVATION_GATE_P`` for the measurement dimension.  Unlike a
+        per-component ``|yᵢ| > kσᵢ`` test, this Mahalanobis distance accounts
+        for the full innovation covariance ``S`` (including cross-terms).  A
+        non-finite innovation or covariance is rejected outright as a counted
+        fault rather than propagated into the state.
 
         Args:
             y: Innovation (residual) vector.
@@ -331,12 +357,18 @@ class NavigationEKF:
         """
         S = H @ self._P @ H.T + R  # innovation covariance
 
-        # Innovation gate
-        threshold = config.EKF_RESIDUAL_SIGMA_THRESHOLD
-        for i in range(len(y)):
-            sigma_i = np.sqrt(S[i, i])
-            if sigma_i > 0.0 and abs(y[i]) > threshold * sigma_i:
-                return  # reject entire measurement
+        # Defence in depth: never ingest a non-finite measurement. The
+        # integrator also guards downstream, but a NaN must not reach the state.
+        if not (np.all(np.isfinite(y)) and np.all(np.isfinite(S))):
+            self.measurement_rejections += 1
+            return
+
+        # Innovation-consistency (NIS / Mahalanobis) gate.
+        nis = float(y @ np.linalg.solve(S, y))
+        self.last_nis = nis
+        if nis > _nis_gate_threshold(len(y), config.EKF_INNOVATION_GATE_P):
+            self.measurement_rejections += 1
+            return  # reject entire measurement
 
         # Kalman gain
         K = np.linalg.solve(S.T, H @ self._P).T
