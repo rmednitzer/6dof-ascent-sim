@@ -1,4 +1,21 @@
-"""Simulation parameters — single source of truth for all constants and tunables."""
+"""Simulation parameters.
+
+Fixed physical / model constants are plain module globals below. The *overridable*
+parameters — those a Monte-Carlo run may disperse — are NOT globals here: they are
+declared (with types, bounds, and defaults) in :mod:`sim.config_schema` and
+resolved per-run from a context-local config (see the bottom of this module and
+ADR 0018). Read them the usual way, ``config.<NAME>``; set them for a run with
+``with config.override_context({...}):`` — never assign ``config.<NAME> = ...``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any
+
+from sim.config_schema import OVERRIDABLE_PARAM_NAMES, OverridableParams
 
 # ---------- Orbital target ----------
 TARGET_ALTITUDE_M = 400_000  # 400 km circular LEO
@@ -38,23 +55,21 @@ LAUNCH_LON_DEG = -80.6490
 LAUNCH_ALT_M = 0.0
 
 # ---------- Stage 1 ----------
-S1_DRY_MASS_KG = 22_200  # Structural mass
-S1_PROPELLANT_KG = 395_700  # Fuel + oxidizer
-S1_THRUST_VAC_N = 7_607_000  # Vacuum thrust (9 engines, Merlin-class)
+# Overridable (see config_schema): S1_DRY_MASS_KG, S1_PROPELLANT_KG,
+# S1_THRUST_VAC_N, S1_ISP_VAC_S.
 S1_THRUST_SL_N = 6_806_000  # Sea-level thrust
-S1_ISP_VAC_S = 311  # Vacuum Isp
 S1_ISP_SL_S = 282  # Sea-level Isp
 S1_BURN_TIME_S = 162  # Nominal burn time
 S1_THROTTLE_MIN = 0.4  # Minimum throttle
 
 # ---------- Stage 2 ----------
+# Overridable (see config_schema): S2_THRUST_VAC_N, S2_ISP_VAC_S.
 S2_DRY_MASS_KG = 4_000
 S2_PROPELLANT_KG = 92_670
-S2_THRUST_VAC_N = 981_000
-S2_ISP_VAC_S = 348
 S2_BURN_TIME_S = 397
 
 # ---------- Aerodynamics ----------
+# Overridable (see config_schema): CD_SCALE_FACTOR.
 CD_TABLE_MACH = [0.0, 0.5, 0.8, 1.0, 1.2, 2.0, 3.0, 5.0, 10.0]
 CD_TABLE_VALUE = [0.30, 0.30, 0.35, 0.50, 0.45, 0.35, 0.30, 0.25, 0.20]
 REFERENCE_AREA_M2 = 10.52  # Cross-section area (3.66m diameter)
@@ -83,11 +98,10 @@ TVC_ACTUATOR_DAMPING_RATIO = 0.7  # Damping ratio (critically damped ~0.7)
 TVC_ACTUATOR_DYNAMICS_ENABLED = True  # Toggle actuator dynamics
 
 # ---------- EKF parameters ----------
+# Overridable (see config_schema): IMU_ACCEL_BIAS_MPS2, IMU_GYRO_BIAS_RADS,
+# GPS_POS_NOISE_M.
 IMU_ACCEL_NOISE_MPS2 = 0.01  # Accelerometer noise (m/s²)
 IMU_GYRO_NOISE_RADS = 0.001  # Gyro noise (rad/s)
-IMU_ACCEL_BIAS_MPS2 = 0.001  # Accelerometer bias instability
-IMU_GYRO_BIAS_RADS = 0.0001  # Gyro bias instability
-GPS_POS_NOISE_M = 5.0  # GPS position noise (m)
 GPS_VEL_NOISE_MS = 0.1  # GPS velocity noise (m/s)
 GPS_UPDATE_HZ = 1  # GPS update rate
 BARO_ALT_NOISE_M = 10.0  # Barometer noise (m)
@@ -124,38 +138,27 @@ FTS_ATTITUDE_HYSTERESIS_S = 0.2  # seconds (~20 frames at 100 Hz); 0.0 = instant
 FTS_COVARIANCE_LIMIT_M = 10_000  # Max EKF position uncertainty
 
 # ---------- Flex body — first 3 lateral bending modes ----------
+# Overridable (see config_schema): FLEX_ENABLED, FLEX_NOTCH_ENABLED,
+# FLEX_NOTCH_Q, FLEX_MODAL_MASS_KG.
 FLEX_MODE_FREQS_HZ = [1.2, 3.5, 7.0]  # Natural frequencies (full propellant)
 FLEX_MODE_FREQS_EMPTY_HZ = [2.0, 5.5, 10.0]  # Natural frequencies (empty stage)
 FLEX_DAMPING_RATIOS = [0.01, 0.01, 0.005]  # Modal damping ratios
 FLEX_MODE_SLOPES_AT_IMU = [0.5, -0.3, 0.15]  # Mode shape slope at IMU location (rad/m)
 FLEX_MODE_SLOPES_AT_ENGINE = [1.0, 0.8, 0.6]  # Mode shape slope at engine gimbal
-FLEX_ENABLED = True  # Toggle for comparison runs
-# Generalised (modal) mass for the bending oscillators (kg). Sets the bending
-# amplitude per unit TVC lateral force; the default 1.0 in FlexBody.update would
-# make the modal response physically enormous, so the live control-structure
-# coupling (AD-04) passes this realistic value instead.
-FLEX_MODAL_MASS_KG = 1_000_000.0
-# Structural notch filter on the control rate feedback (AD-04). A cascade of
-# notches scheduled on the (propellant-varying) modal frequencies keeps the
-# attitude controller from chasing the lightly-damped bending modes — without it
-# the flex/control coupling flutters and FTS-aborts. Q sets the notch width.
-FLEX_NOTCH_ENABLED = True
-FLEX_NOTCH_Q = 2.0
 
 # ---------- Propellant slosh — pendulum analogy ----------
+# Overridable (see config_schema): SLOSH_ENABLED.
 SLOSH_MASS_FRACTION = 0.30  # Fraction of propellant participating in slosh
 SLOSH_FREQ_FULL_HZ = 0.3  # Slosh frequency at full tank
 SLOSH_FREQ_EMPTY_HZ = 0.8  # Slosh frequency approaching empty
 SLOSH_DAMPING_RATIO = 0.03  # Baffled tank damping
 SLOSH_ARM_LENGTH_M = 2.0  # Effective pendulum length (full tank)
-SLOSH_ENABLED = True  # Toggle for comparison runs
 
 # ---------- Monte Carlo ----------
+# Overridable (see config_schema): CD_SCALE_FACTOR, ATMO_DENSITY_SCALE.
 MC_NUM_RUNS = 1000  # Default number of Monte Carlo runs
 MC_SEED = 42  # Base random seed
 MC_WORKERS = None  # None = os.cpu_count()
-CD_SCALE_FACTOR = 1.0  # Multiplier on Cd table (dispersed in MC)
-ATMO_DENSITY_SCALE = 1.0  # Multiplier on atmospheric density
 
 # ---------- Monte Carlo on SLURM HPC (experimental) ----------
 # Campaign-level defaults for sim/montecarlo/hpc.py. Cluster-specific
@@ -165,8 +168,7 @@ MC_RUNS_PER_TASK = 50  # Runs executed per SLURM array task
 MC_HPC_OUTPUT_DIR = "output/montecarlo"  # Shared dir for shards + aggregate
 
 # ---------- Wind ----------
-WIND_SPEED_MS = 10.0  # Mean wind speed
-WIND_DIRECTION_DEG = 270.0  # Wind coming from west
+# Overridable (see config_schema): WIND_SPEED_MS, WIND_DIRECTION_DEG.
 WIND_GUST_SIGMA_MS = 5.0  # Gust standard deviation
 
 # ---------- Guidance ----------
@@ -194,3 +196,56 @@ CONTROL_GAIN_SCHEDULE_ENABLED = True  # Toggle gain scheduling
 
 # ---------- Atmospheric pressure at sea level ----------
 P_SL = 101325.0  # Sea-level pressure (Pa)
+
+
+# ---------- Per-run overridable parameters (context-local) — ADR 0018 ----------
+# The overridable parameters (sim.config_schema.OverridableParams) are resolved
+# from a context-local config rather than module globals, so a Monte-Carlo run
+# applies its dispersion via override_context() instead of mutating this module.
+# Concurrent runs (threads / async tasks) therefore cannot interfere, and
+# run_simulation needs no save/restore of globals. This completes ADR-0009 and
+# supersedes the global-override half of ADR-0004. PEP 562 module __getattr__
+# serves the overridable names (which are deliberately not module globals).
+_OVERRIDABLE: frozenset[str] = frozenset(OVERRIDABLE_PARAM_NAMES)
+# Nominal values, shared across contexts (OverridableParams is frozen, so the
+# singleton cannot be mutated). The ContextVar defaults to None = "use nominal".
+_DEFAULT_OVERRIDES = OverridableParams()
+_active_overrides: ContextVar[OverridableParams | None] = ContextVar("active_overrides", default=None)
+
+
+def active_overrides() -> OverridableParams:
+    """Return the overridable-parameter config active in the current context."""
+    current = _active_overrides.get()
+    return current if current is not None else _DEFAULT_OVERRIDES
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve an overridable parameter from the active context-local config.
+
+    Invoked by PEP 562 only for names not defined as module globals — i.e. the
+    overridable parameters. Everything else raises ``AttributeError`` as usual.
+    """
+    if name in _OVERRIDABLE:
+        return getattr(active_overrides(), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+@contextmanager
+def override_context(overrides: Mapping[str, Any] | None) -> Iterator[None]:
+    """Activate per-run parameter overrides for the duration of the block.
+
+    Builds a validated :class:`OverridableParams` from *overrides* (ignoring
+    ``_``-prefixed bookkeeping keys such as ``_seed`` / ``_run_index``) and
+    installs it as the context-local config, restoring the previous one on exit.
+    Thread- and task-safe; performs no global mutation.
+
+    Args:
+        overrides: Parameter-name -> value mapping, or ``None`` for the nominal
+            configuration.
+    """
+    params = {k: v for k, v in (overrides or {}).items() if not k.startswith("_")}
+    token = _active_overrides.set(OverridableParams(**params))
+    try:
+        yield
+    finally:
+        _active_overrides.reset(token)
