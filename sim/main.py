@@ -82,37 +82,6 @@ def _init_state() -> VehicleState:
     )
 
 
-def _save_config() -> dict:
-    """Snapshot the config values that an override may change.
-
-    The key list is the single overridable-parameter declaration in
-    ``sim.config_schema`` rather than a hand-maintained copy, so it can no
-    longer drift from the dispersion set (Q-02).
-    """
-    from sim.config_schema import OVERRIDABLE_PARAM_NAMES
-
-    return {k: getattr(config, k) for k in OVERRIDABLE_PARAM_NAMES if hasattr(config, k)}
-
-
-def _restore_config(saved: dict) -> None:
-    """Restore config values."""
-    for key, value in saved.items():
-        if hasattr(config, key):
-            setattr(config, key, value)
-
-
-def _apply_overrides(overrides: dict | None) -> dict:
-    """Apply config overrides, return the overrides dict."""
-    if overrides is None:
-        return {}
-    for key, value in overrides.items():
-        if key.startswith("_"):
-            continue
-        if hasattr(config, key):
-            setattr(config, key, value)
-    return overrides
-
-
 def _is_orbital_insertion(state: VehicleState, stage_index: int):
     """Return ``(True, elements)`` iff *state* is a real LEO insertion.
 
@@ -159,30 +128,32 @@ def _is_orbital_insertion(state: VehicleState, stage_index: int):
 def run_simulation(
     config_override: dict | None = None,
     quiet: bool = False,
+    write_output: bool | None = None,
 ):
     """Run the complete ascent simulation.
 
     Args:
-        config_override: Config parameter overrides for Monte Carlo.
+        config_override: Per-run parameter overrides (Monte Carlo). Applied via a
+            context-local config (``config.override_context``) — no global
+            mutation — so concurrent runs cannot interfere.
         quiet: Suppress progress output.
+        write_output: Whether to run post-insertion orbit analysis and write
+            telemetry files / plots. Defaults to ``True`` for a nominal run
+            (``config_override is None``) and ``False`` for a Monte-Carlo run.
 
     Returns:
         MonteCarloResult with trajectory metrics.
     """
+    dispersed_params = config_override or {}
+    if write_output is None:
+        write_output = config_override is None
+    run_index = int(dispersed_params.get("_run_index", 0))
 
-    saved_config = _save_config()
-    dispersed_params = _apply_overrides(config_override)
-    is_mc = config_override is not None
-    run_index = int(dispersed_params.get("_run_index", 0)) if is_mc else 0
-
-    try:
-        return _run_inner(quiet, is_mc, run_index, dispersed_params)
-    finally:
-        if is_mc:
-            _restore_config(saved_config)
+    with config.override_context(config_override):
+        return _run_inner(quiet, write_output, run_index, dispersed_params)
 
 
-def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict):
+def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params: dict):
     """Core simulation loop."""
     from sim.montecarlo.dispatcher import MonteCarloResult
 
@@ -658,7 +629,7 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
 
     # --- Post-insertion orbit analysis ---
     orbit_elements_dict = None
-    if outcome == "SUCCESS" and not is_mc:
+    if outcome == "SUCCESS" and write_output:
         try:
             from sim.orbital.maneuvers import total_correction_budget
             from sim.orbital.propagator import OrbitPropagator
@@ -683,8 +654,8 @@ def _run_inner(quiet: bool, is_mc: bool, run_index: int, dispersed_params: dict)
             if not quiet:
                 logging.exception("Orbit analysis error")
 
-    # --- Write telemetry (non-MC only) ---
-    if not is_mc:
+    # --- Write telemetry / plots (output runs only) ---
+    if write_output:
         summary = recorder.write_output(
             outcome=outcome,
             true_state=true_state,
@@ -761,19 +732,21 @@ def main() -> None:
     parser.add_argument("--no-slosh", action="store_true", help="Disable propellant slosh model")
     args = parser.parse_args()
 
+    overrides: dict = {}
     if args.no_flex:
-        config.FLEX_ENABLED = False
+        overrides["FLEX_ENABLED"] = False
     if args.no_slosh:
-        config.SLOSH_ENABLED = False
+        overrides["SLOSH_ENABLED"] = False
 
     print("6-DOF Ascent Simulation")
     print("=" * 40)
     print(f"Target: {config.TARGET_ALTITUDE_M / 1000:.0f} km, {config.TARGET_INCLINATION_DEG} deg inc")
-    print(f"Flex body: {'ON' if config.FLEX_ENABLED else 'OFF'}")
-    print(f"Slosh: {'ON' if config.SLOSH_ENABLED else 'OFF'}")
+    print(f"Flex body: {'OFF' if args.no_flex else 'ON'}")
+    print(f"Slosh: {'OFF' if args.no_slosh else 'ON'}")
     print()
 
-    result = run_simulation()
+    # Overrides go through the context-local config; keep the detailed output path.
+    result = run_simulation(config_override=overrides or None, write_output=True)
 
     if result is not None:
         if result.outcome == "SUCCESS":

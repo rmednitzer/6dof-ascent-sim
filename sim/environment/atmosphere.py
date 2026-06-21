@@ -175,7 +175,9 @@ def atmosphere(altitude_m: float, density_scale: float | None = None) -> Atmosph
         temperature, and speed of sound.
     """
     if density_scale is None:
-        density_scale = config.ATMO_DENSITY_SCALE
+        # config.ATMO_DENSITY_SCALE is resolved per-run (context-local, typed
+        # Any), so coerce to float to keep the static type concrete.
+        density_scale = float(config.ATMO_DENSITY_SCALE)
 
     # Clamp below sea level
     if altitude_m <= 0.0:

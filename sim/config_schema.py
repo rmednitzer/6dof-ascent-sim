@@ -1,27 +1,16 @@
-"""Validation schema for Monte-Carlo override / dispersion parameters.
+"""Validation schema and default values for the overridable / dispersion parameters.
 
-This is step 1 of ADR-0009 ("replace mutable-global config override with
-explicit parameter passing"): a *validation layer* over today's
-``sim.config``. It does **not** change how the simulation reads configuration
-(modules still use ``from sim import config``); it adds a single, typed,
-bounded declaration of *which* parameters may be overridden per Monte-Carlo run
-and validates dispersion definitions and override dicts against it.
+Step 2 of ADR-0009 (ADR 0018): this module is the single source of truth for the
+*overridable* parameters — the ones a Monte-Carlo run may disperse. It declares
+their types, bounds, units, and default values. ``sim.config`` resolves
+``config.<NAME>`` for these names from a context-local instance of
+:class:`OverridableParams` (see ``sim/config.py``), so per-run overrides no
+longer mutate global state.
 
-Two concrete wins:
-
-* **Catch typos / bad values before a campaign.** ``generate_dispersed_config``
-  silently skips a dispersion whose ``parameter`` is not a real config
-  attribute (``getattr(..., None)``), so a mis-spelled parameter name would
-  quietly disable that dispersion. :func:`validate_dispersions` rejects it, and
-  :func:`validate_overrides` range-checks the drawn values (e.g. a non-positive
-  IMU bias scale, the AD-18 failure class).
-* **Single-source the overridable set.** :data:`OVERRIDABLE_PARAM_NAMES` is the
-  one place the overridable parameters are declared; ``main._save_config`` reads
-  it instead of a hand-maintained key list (closing the Q-02 drift).
-
-Parameter *values* still live solely in ``sim.config`` (the single source of
-truth, ADR-0001) — each field below defaults from it; this schema only adds the
-type, bounds, and units.
+The *fixed* physical/model constants (Earth model, tables, safety limits, control
+gains, …) remain plain module globals in ``sim.config``. This module must not
+import ``sim.config`` (``sim.config`` imports it), so the defaults below are
+literals.
 """
 
 from __future__ import annotations
@@ -31,72 +20,48 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from sim import config
-
 
 class OverridableParams(BaseModel):
-    """Typed, bounded schema of the per-run overridable parameters.
+    """Typed, bounded schema + defaults for the per-run overridable parameters.
 
     ``extra="forbid"`` makes an unknown key (a typo) a hard validation error.
-    All fields have defaults sourced from ``sim.config`` so a partial override
-    dict validates against this model directly.
+    All fields have defaults, so a partial override dict validates directly and
+    a default instance supplies the nominal configuration.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     # --- Propulsion ---
-    S1_THRUST_VAC_N: float = Field(
-        default=config.S1_THRUST_VAC_N, gt=0.0, le=5e7, description="Stage-1 vacuum thrust (N)"
-    )
-    S1_ISP_VAC_S: float = Field(default=config.S1_ISP_VAC_S, gt=0.0, le=1000.0, description="Stage-1 vacuum Isp (s)")
-    S2_THRUST_VAC_N: float = Field(
-        default=config.S2_THRUST_VAC_N, gt=0.0, le=5e7, description="Stage-2 vacuum thrust (N)"
-    )
-    S2_ISP_VAC_S: float = Field(default=config.S2_ISP_VAC_S, gt=0.0, le=1000.0, description="Stage-2 vacuum Isp (s)")
-    S1_PROPELLANT_KG: float = Field(
-        default=config.S1_PROPELLANT_KG, gt=0.0, le=1e7, description="Stage-1 propellant (kg)"
-    )
-    S1_DRY_MASS_KG: float = Field(default=config.S1_DRY_MASS_KG, gt=0.0, le=1e6, description="Stage-1 dry mass (kg)")
+    S1_THRUST_VAC_N: float = Field(default=7_607_000.0, gt=0.0, le=5e7, description="Stage-1 vacuum thrust (N)")
+    S1_ISP_VAC_S: float = Field(default=311.0, gt=0.0, le=1000.0, description="Stage-1 vacuum Isp (s)")
+    S2_THRUST_VAC_N: float = Field(default=981_000.0, gt=0.0, le=5e7, description="Stage-2 vacuum thrust (N)")
+    S2_ISP_VAC_S: float = Field(default=348.0, gt=0.0, le=1000.0, description="Stage-2 vacuum Isp (s)")
+    S1_PROPELLANT_KG: float = Field(default=395_700.0, gt=0.0, le=1e7, description="Stage-1 propellant (kg)")
+    S1_DRY_MASS_KG: float = Field(default=22_200.0, gt=0.0, le=1e6, description="Stage-1 dry mass (kg)")
 
     # --- Aerodynamics / atmosphere / wind ---
-    CD_SCALE_FACTOR: float = Field(
-        default=config.CD_SCALE_FACTOR, gt=0.0, le=10.0, description="Drag-coefficient multiplier (-)"
-    )
-    ATMO_DENSITY_SCALE: float = Field(
-        default=config.ATMO_DENSITY_SCALE, ge=0.0, le=10.0, description="Atmospheric-density multiplier (-)"
-    )
-    WIND_SPEED_MS: float = Field(default=config.WIND_SPEED_MS, ge=0.0, le=200.0, description="Mean wind speed (m/s)")
+    CD_SCALE_FACTOR: float = Field(default=1.0, gt=0.0, le=10.0, description="Drag-coefficient multiplier (-)")
+    ATMO_DENSITY_SCALE: float = Field(default=1.0, ge=0.0, le=10.0, description="Atmospheric-density multiplier (-)")
+    WIND_SPEED_MS: float = Field(default=10.0, ge=0.0, le=200.0, description="Mean wind speed (m/s)")
     WIND_DIRECTION_DEG: float = Field(
-        default=config.WIND_DIRECTION_DEG, ge=0.0, le=360.0, description="Wind direction, met. convention (deg)"
+        default=270.0, ge=0.0, le=360.0, description="Wind direction, met. convention (deg)"
     )
 
     # --- Sensors (scale parameters: must be strictly positive — AD-18) ---
-    IMU_ACCEL_BIAS_MPS2: float = Field(
-        default=config.IMU_ACCEL_BIAS_MPS2, gt=0.0, le=1.0, description="Accel bias-instability RMS (m/s^2)"
-    )
-    IMU_GYRO_BIAS_RADS: float = Field(
-        default=config.IMU_GYRO_BIAS_RADS, gt=0.0, le=1.0, description="Gyro bias-instability RMS (rad/s)"
-    )
-    GPS_POS_NOISE_M: float = Field(
-        default=config.GPS_POS_NOISE_M, gt=0.0, le=1000.0, description="GPS position noise 1-sigma (m)"
-    )
+    IMU_ACCEL_BIAS_MPS2: float = Field(default=0.001, gt=0.0, le=1.0, description="Accel bias-instability RMS (m/s^2)")
+    IMU_GYRO_BIAS_RADS: float = Field(default=0.0001, gt=0.0, le=1.0, description="Gyro bias-instability RMS (rad/s)")
+    GPS_POS_NOISE_M: float = Field(default=5.0, gt=0.0, le=1000.0, description="GPS position noise 1-sigma (m)")
 
     # --- Structural-dynamics model toggles / tunables ---
-    FLEX_ENABLED: bool = Field(default=config.FLEX_ENABLED, description="Enable the flex-body model")
-    FLEX_NOTCH_ENABLED: bool = Field(
-        default=config.FLEX_NOTCH_ENABLED, description="Enable the structural notch filter"
-    )
-    FLEX_NOTCH_Q: float = Field(
-        default=config.FLEX_NOTCH_Q, gt=0.0, le=100.0, description="Structural notch quality factor (-)"
-    )
-    FLEX_MODAL_MASS_KG: float = Field(
-        default=config.FLEX_MODAL_MASS_KG, gt=0.0, le=1e9, description="Generalised modal mass (kg)"
-    )
-    SLOSH_ENABLED: bool = Field(default=config.SLOSH_ENABLED, description="Enable the propellant-slosh model")
+    FLEX_ENABLED: bool = Field(default=True, description="Enable the flex-body model")
+    FLEX_NOTCH_ENABLED: bool = Field(default=True, description="Enable the structural notch filter")
+    FLEX_NOTCH_Q: float = Field(default=2.0, gt=0.0, le=100.0, description="Structural notch quality factor (-)")
+    FLEX_MODAL_MASS_KG: float = Field(default=1_000_000.0, gt=0.0, le=1e9, description="Generalised modal mass (kg)")
+    SLOSH_ENABLED: bool = Field(default=True, description="Enable the propellant-slosh model")
 
 
 # The single declaration of the overridable parameter set. Consumed by
-# main._save_config so the save/restore key list cannot drift (Q-02).
+# sim.config (context-local resolution) and the Monte-Carlo dispatcher.
 OVERRIDABLE_PARAM_NAMES: tuple[str, ...] = tuple(OverridableParams.model_fields)
 
 

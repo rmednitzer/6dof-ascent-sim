@@ -74,10 +74,12 @@ class TestOverridableSetCoversDispersions:
         for d in DEFAULT_DISPERSIONS:
             assert d.parameter in names, f"{d.parameter} is dispersed but not in OVERRIDABLE_PARAM_NAMES"
 
-    def test_save_config_derives_from_schema(self):
-        from sim.main import _save_config
+    def test_default_config_exposes_every_overridable_param(self):
+        # config.<NAME> must resolve for every declared overridable parameter.
+        from sim import config
 
-        assert set(_save_config()) == set(OVERRIDABLE_PARAM_NAMES)
+        for name in OVERRIDABLE_PARAM_NAMES:
+            assert getattr(config, name) is not None
 
 
 class TestDispatcherValidatesCampaign:
@@ -87,3 +89,53 @@ class TestDispatcherValidatesCampaign:
         bad = [Dispersion("NOT_A_PARAM", "gaussian", sigma=1.0)]
         with pytest.raises(ValueError, match="unknown"):
             MonteCarloDispatcher(num_runs=4, dispersions=bad)
+
+
+class TestContextLocalConfig:
+    """ADR 0018: overridable params resolve from a context-local config, so a
+    run applies overrides without mutating globals and concurrent runs cannot
+    interfere."""
+
+    def test_override_context_applies_and_reverts(self):
+        from sim import config
+
+        assert config.CD_SCALE_FACTOR == 1.0  # nominal default
+        with config.override_context({"CD_SCALE_FACTOR": 1.25}):
+            assert config.CD_SCALE_FACTOR == 1.25
+        assert config.CD_SCALE_FACTOR == 1.0  # restored on exit
+
+    def test_override_context_ignores_internal_keys(self):
+        from sim import config
+
+        with config.override_context({"_seed": 5, "_run_index": 2, "FLEX_ENABLED": False}):
+            assert config.FLEX_ENABLED is False
+
+    def test_override_context_validates(self):
+        from sim import config
+
+        with pytest.raises(ValidationError), config.override_context({"IMU_ACCEL_BIAS_MPS2": -1.0}):
+            pass
+
+    def test_concurrent_overrides_are_isolated(self):
+        """Two threads with different overrides do not interfere — the property
+        impossible under the previous global-mutation design (ADR-0004)."""
+        import threading
+
+        from sim import config
+
+        results: dict[str, float] = {}
+        barrier = threading.Barrier(2)
+
+        def worker(name: str, value: float) -> None:
+            with config.override_context({"CD_SCALE_FACTOR": value}):
+                barrier.wait()  # both threads are inside their context together
+                results[name] = config.CD_SCALE_FACTOR
+
+        t1 = threading.Thread(target=worker, args=("a", 0.8))
+        t2 = threading.Thread(target=worker, args=("b", 1.2))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert results == {"a": 0.8, "b": 1.2}
