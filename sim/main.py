@@ -83,28 +83,15 @@ def _init_state() -> VehicleState:
 
 
 def _save_config() -> dict:
-    """Save config values that might be overridden."""
-    keys = [
-        "S1_THRUST_VAC_N",
-        "S1_ISP_VAC_S",
-        "S2_THRUST_VAC_N",
-        "S2_ISP_VAC_S",
-        "S1_PROPELLANT_KG",
-        "CD_SCALE_FACTOR",
-        "ATMO_DENSITY_SCALE",
-        "WIND_SPEED_MS",
-        "WIND_DIRECTION_DEG",
-        "IMU_ACCEL_BIAS_MPS2",
-        "IMU_GYRO_BIAS_RADS",
-        "GPS_POS_NOISE_M",
-        "S1_DRY_MASS_KG",
-        "FLEX_ENABLED",
-        "FLEX_NOTCH_ENABLED",
-        "FLEX_NOTCH_Q",
-        "FLEX_MODAL_MASS_KG",
-        "SLOSH_ENABLED",
-    ]
-    return {k: getattr(config, k) for k in keys if hasattr(config, k)}
+    """Snapshot the config values that an override may change.
+
+    The key list is the single overridable-parameter declaration in
+    ``sim.config_schema`` rather than a hand-maintained copy, so it can no
+    longer drift from the dispersion set (Q-02).
+    """
+    from sim.config_schema import OVERRIDABLE_PARAM_NAMES
+
+    return {k: getattr(config, k) for k in OVERRIDABLE_PARAM_NAMES if hasattr(config, k)}
 
 
 def _restore_config(saved: dict) -> None:

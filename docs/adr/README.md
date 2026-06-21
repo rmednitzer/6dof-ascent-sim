@@ -32,3 +32,4 @@ changes from the 2026-06-21 cross-repo lessons pass (`audit/05`).
 | [0013](0013-chi-square-innovation-gating.md) | Chi-square (NIS) innovation gating in the navigation EKF | accepted |
 | [0014](0014-fts-attitude-hysteresis.md) | Hysteresis on the FTS attitude criterion | accepted |
 | [0015](0015-adopt-pyright-type-checking.md) | Adopt pyright for static type checking (production code) | accepted |
+| [0016](0016-validated-config-override-schema.md) | Validated Monte-Carlo override schema (ADR-0009 step 1) | accepted |

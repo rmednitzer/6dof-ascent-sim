@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from sim import config
+from sim.config_schema import validate_dispersions, validate_overrides
 from sim.montecarlo.dispersions import (
     DEFAULT_DISPERSIONS,
     Dispersion,
@@ -87,6 +88,9 @@ class MonteCarloDispatcher:
         self.num_runs = num_runs
         self.dispersions = dispersions or DEFAULT_DISPERSIONS
         self.seed = seed
+        # Fail fast on a mis-specified campaign: a dispersion targeting an
+        # unknown/non-overridable parameter would otherwise be silently skipped.
+        validate_dispersions(self.dispersions)
 
     def generate_run_configs(self) -> list[tuple[int, int, dict]]:
         """Generate dispersed config for each run.
@@ -99,6 +103,9 @@ class MonteCarloDispatcher:
             run_seed = self.seed + i
             rng = np.random.default_rng(run_seed)
             override = generate_dispersed_config(self.dispersions, rng)
+            # Range/type-check the drawn values before they reach the worker
+            # (e.g. a non-positive sensor-noise scale would crash the run — AD-18).
+            validate_overrides(override)
             override["_run_index"] = i
             override["_seed"] = run_seed
             configs.append((i, run_seed, override))
