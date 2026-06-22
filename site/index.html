@@ -1003,16 +1003,17 @@ pytest tests/ -v                          <span class="c"># run the test suite</
         const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
         const start = [px[0], py[0], pz[0]];
         const end = [px[n - 1], py[n - 1], pz[n - 1]];
-        const lk = Math.floor(n * 0.4);
-        const u = norm([px[lk], py[lk], pz[lk]]);
+        let cx = 0, cy = 0, cz = 0;
+        for (let i = 0; i < n; i++) { cx += px[i]; cy += py[i]; cz += pz[i]; }
+        const u = norm([cx, cy, cz]); // direction to the arc centroid (centres the framing)
         const upLocal = norm(start); // local vertical at the pad
         let planeN = norm(cross(start, end)); // trajectory-plane normal
         if (planeN[2] < 0) planeN = planeN.map((c) => -c); // keep a consistent side
         const center = { x: u[0] * 0.6, y: u[1] * 0.6, z: u[2] * 0.6 };
         const eye = {
-          x: u[0] * 0.9 + planeN[0] * 1.2,
-          y: u[1] * 0.9 + planeN[1] * 1.2,
-          z: u[2] * 0.9 + planeN[2] * 1.2,
+          x: u[0] * 0.95 + planeN[0] * 1.1,
+          y: u[1] * 0.95 + planeN[1] * 1.1,
+          z: u[2] * 0.95 + planeN[2] * 1.1,
         };
         const up = { x: upLocal[0], y: upLocal[1], z: upLocal[2] };
 
@@ -1021,9 +1022,11 @@ pytest tests/ -v                          <span class="c"># run the test suite</
           height: 540,
           hovermode: "closest",
           scene: {
-            xaxis: axis({ title: "X (km)", showbackground: false, showspikes: false }),
-            yaxis: axis({ title: "Y (km)", showbackground: false, showspikes: false }),
-            zaxis: axis({ title: "Z (km)", showbackground: false, showspikes: false }),
+            // Hide the Cartesian km axes/grid/panes — meaningless for a globe
+            // view and just clutter; the colorbar and labels carry the scale.
+            xaxis: { visible: false },
+            yaxis: { visible: false },
+            zaxis: { visible: false },
             aspectmode: "data",
             bgcolor: "rgba(0,0,0,0)",
             camera: { eye, center, up },
