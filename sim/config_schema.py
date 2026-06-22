@@ -35,7 +35,11 @@ class OverridableParams(BaseModel):
     S1_THRUST_VAC_N: float = Field(default=7_607_000.0, gt=0.0, le=5e7, description="Stage-1 vacuum thrust (N)")
     S1_ISP_VAC_S: float = Field(default=311.0, gt=0.0, le=1000.0, description="Stage-1 vacuum Isp (s)")
     S2_THRUST_VAC_N: float = Field(default=981_000.0, gt=0.0, le=5e7, description="Stage-2 vacuum thrust (N)")
-    S2_ISP_VAC_S: float = Field(default=348.0, gt=0.0, le=1000.0, description="Stage-2 vacuum Isp (s)")
+    # Raised 348 -> 356 s (+2.3%) for performance margin (ADR 0021 / BACKLOG N-01):
+    # the higher-Isp upper stage reaches orbit with margin so adverse dispersions
+    # no longer deplete just short of insertion. Unlike a propellant increase it
+    # leaves liftoff mass (and the fragile nominal trajectory) unchanged.
+    S2_ISP_VAC_S: float = Field(default=356.0, gt=0.0, le=1000.0, description="Stage-2 vacuum Isp (s)")
     S1_PROPELLANT_KG: float = Field(default=395_700.0, gt=0.0, le=1e7, description="Stage-1 propellant (kg)")
     S1_DRY_MASS_KG: float = Field(default=22_200.0, gt=0.0, le=1e6, description="Stage-1 dry mass (kg)")
 

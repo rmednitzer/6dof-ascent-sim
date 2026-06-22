@@ -45,20 +45,24 @@ class TestNominalGolden:
     exercises the TVC clamps more often) and ``peak_ekf_uncertainty_m`` (≈1700 m,
     still far below the 10 km FTS limit). If a deliberate physics/GNC change moves
     these, update the golden values here together with the committed example
-    artifacts (``examples/output/``), per BACKLOG D-06.
+    artifacts (``examples/output/``), per BACKLOG D-06. Re-baselined again
+    2026-06-22 for ADR 0021 (S2 Isp 348->356 s, N-01 performance margin): the
+    higher-Isp upper stage barely moves the nominal (insertion, peak-q, axial-g,
+    and EKF uncertainty essentially unchanged; ``total_time_s`` 487.9->491.8 as
+    the more-efficient burn shifts cutoff slightly).
     """
 
     # Golden summary of the deterministic nominal run (seed 0).
     _GOLD = {
         "outcome": "SUCCESS",
-        "insertion_altitude_m": 407_346.2,
-        "insertion_velocity_ms": 7_603.5,
-        "insertion_fpa_deg": 0.807,
+        "insertion_altitude_m": 407_265.4,
+        "insertion_velocity_ms": 7_602.4,
+        "insertion_fpa_deg": 0.800,
         "peak_q_pa": 32_443.6,
         "peak_axial_g": 5.40,
-        "peak_ekf_uncertainty_m": 1_663.4,
-        "boundary_clamp_count": 326,
-        "total_time_s": 487.9,
+        "peak_ekf_uncertainty_m": 1_707.4,
+        "boundary_clamp_count": 324,
+        "total_time_s": 491.8,
     }
 
     def test_nominal_summary_matches_golden(self):
