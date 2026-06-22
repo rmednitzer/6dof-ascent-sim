@@ -57,20 +57,23 @@ class TestNominalGolden:
     ADR 0024 (AD-17 inclination targeting): azimuth correction + terminal yaw
     out-of-plane steering reach ``insertion_inclination_deg`` ~45->51.04 deg
     (target 51.6), which shifts the terminal trajectory (fpa 0.32->0.70).
+    Re-baselined again 2026-06-22 for ADR 0025 (post-separation ullage-settling
+    coast): the added ~3 s cold-staging coast lofts the staging arc slightly and
+    pushes insertion ~2.5 s later (fpa 0.70->1.12, t 493.8->496.3).
     """
 
     # Golden summary of the deterministic nominal run (seed 0).
     _GOLD = {
         "outcome": "SUCCESS",
-        "insertion_altitude_m": 407_178.5,
-        "insertion_velocity_ms": 7_601.4,
-        "insertion_fpa_deg": 0.700,
-        "insertion_inclination_deg": 51.04,
+        "insertion_altitude_m": 407_967.1,
+        "insertion_velocity_ms": 7_612.7,
+        "insertion_fpa_deg": 1.120,
+        "insertion_inclination_deg": 51.05,
         "peak_q_pa": 31_725.4,
         "peak_axial_g": 5.40,
-        "peak_ekf_uncertainty_m": 561.4,
-        "boundary_clamp_count": 297,
-        "total_time_s": 493.8,
+        "peak_ekf_uncertainty_m": 568.4,
+        "boundary_clamp_count": 309,
+        "total_time_s": 496.3,
     }
 
     def test_nominal_summary_matches_golden(self):

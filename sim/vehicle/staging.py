@@ -3,8 +3,13 @@
 Implements a state-machine that monitors propellant depletion and drives
 the separation sequence:
 
-    NOMINAL → TAIL_OFF (1 s) → COAST (1 s) → SEPARATION → S2_IGNITION (0.5 s ramp)
+    NOMINAL → TAIL_OFF (1 s) → COAST (1 s) → SEPARATION
+            → SETTLING (3 s) → S2_IGNITION (0.5 s ramp)
 
+The pre-separation TAIL_OFF + COAST (~2 s) lets S1 thrust decay before the stages
+part; the post-separation SETTLING coast (~3 s) is the cold-staging gap that lets
+the spent stage clear and the upper-stage propellant settle at the tank outlet
+before S2 lights (ADR 0025) — so S2 is not commanded at the instant of separation.
 A safety interlock prevents separation while effective throttle exceeds 5 %.
 """
 
@@ -19,7 +24,8 @@ from sim.vehicle.vehicle import Vehicle
 # Sequence timing
 # ---------------------------------------------------------------------------
 TAIL_OFF_DURATION: float = 1.0  # Engine tail-off (s)
-COAST_DURATION: float = 1.0  # Unpowered coast (s)
+COAST_DURATION: float = 1.0  # Pre-separation coast (s)
+POST_SEP_COAST_DURATION: float = 3.0  # Post-separation ullage-settling coast (s)
 S2_IGNITION_RAMP: float = 0.5  # S2 engine start-up ramp (s)
 
 # Safety interlock threshold — fraction of rated thrust
@@ -36,8 +42,9 @@ class StagingPhase(Enum):
 
     NOMINAL = auto()  # Burning on current stage
     TAIL_OFF = auto()  # S1 engine shutting down
-    COAST = auto()  # Unpowered gap between stages
+    COAST = auto()  # Pre-separation unpowered coast
     SEPARATION = auto()  # Mass drop (instantaneous)
+    SETTLING = auto()  # Post-separation ullage-settling coast
     S2_IGNITION = auto()  # S2 engine ramping up
     COMPLETE = auto()  # Separation finished — normal ops on next stage
 
@@ -155,12 +162,22 @@ class StagingSequencer:
                 self._s1_engine.shutdown()
                 return "STAGING: ABORT — thrust above interlock; re-entering tail-off"
 
-            # Drop the spent stage
+            # Drop the spent stage, then coast (cold staging): S2 is NOT lit at
+            # the instant of separation — the vehicle settles propellant and lets
+            # the spent stage clear during SETTLING before ignition.
             self._vehicle.advance_stage()
-            self._phase = StagingPhase.S2_IGNITION
+            self._phase = StagingPhase.SETTLING
             self._phase_elapsed = 0.0
-            self._s2_engine.ignite()
-            event = "STAGING: separation — S2 ignition commanded"
+            event = "STAGING: separation — coasting for ullage settling"
+
+        # ------------------------------------------------------------------
+        elif self._phase is StagingPhase.SETTLING:
+            self._phase_elapsed += dt
+            if self._phase_elapsed >= POST_SEP_COAST_DURATION:
+                self._phase = StagingPhase.S2_IGNITION
+                self._phase_elapsed = 0.0
+                self._s2_engine.ignite()
+                event = "STAGING: settling coast complete — S2 ignition commanded"
 
         # ------------------------------------------------------------------
         elif self._phase is StagingPhase.S2_IGNITION:
