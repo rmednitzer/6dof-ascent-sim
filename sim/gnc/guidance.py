@@ -31,6 +31,7 @@ import numpy as np
 from sim import config
 from sim.core.fast_math import cross3, dot3, norm3
 from sim.core.reference_frames import (
+    lla_to_ecef,
     quaternion_from_axis_angle,
 )
 from sim.core.state import VehicleState
@@ -65,7 +66,18 @@ class GuidanceLaw:
         self._meco_time_s = meco_time_s
         self._phase = GuidancePhase.VERTICAL_RISE
         self._pitch_kick_applied = False
-        self._launch_downrange_eci = self._compute_launch_downrange()
+        # Gravity-turn downrange uses the Earth-rotation-corrected (flight) azimuth
+        # so the relative-velocity turn builds the right *inertial* plane (AD-17 a).
+        self._launch_downrange_eci = self._compute_launch_downrange(rotation_correction=True)
+        # Target inertial orbital-plane normal, fixed over the (short) ascent: the
+        # plane through the launch site at the inertial azimuth for the target
+        # inclination. The terminal phase steers to null velocity along this normal.
+        downrange_inertial = self._compute_launch_downrange(rotation_correction=False)
+        r_launch = lla_to_ecef(
+            math.radians(config.LAUNCH_LAT_DEG), math.radians(config.LAUNCH_LON_DEG), config.LAUNCH_ALT_M
+        )
+        plane_normal = cross3(r_launch, downrange_inertial)
+        self._target_plane_normal = plane_normal / norm3(plane_normal)
 
         # PEG state — A is initialized from current flight path on first call
         self._peg_initialized = False
@@ -344,8 +356,35 @@ class GuidanceLaw:
         if norm > 1e-10:
             desired_dir /= norm
 
+        desired_dir = self._apply_plane_steering(desired_dir, state)
         q_des = self._quaternion_aligning_thrust(desired_dir)
         return GuidanceCommand(q_des, throttle=1.0, phase=GuidancePhase.TERMINAL)
+
+    def _apply_plane_steering(self, desired_dir: np.ndarray, state: VehicleState) -> np.ndarray:
+        """Yaw the commanded thrust to null inertial out-of-plane velocity (AD-17).
+
+        Rotates *desired_dir* toward the target orbital plane by an angle
+        proportional to the out-of-plane velocity ``v · n`` (``n`` =
+        ``_target_plane_normal``), clamped to ``GUIDANCE_MAX_YAW_DEG``. Driving
+        that component to zero converges the achieved inclination to
+        ``TARGET_INCLINATION_DEG`` without a separate plane-change burn.
+        """
+        n = self._target_plane_normal
+        v_op = dot3(state.velocity_eci, n)  # inertial out-of-plane velocity (m/s)
+        max_yaw = math.radians(config.GUIDANCE_MAX_YAW_DEG)
+        yaw = float(np.clip(-config.GUIDANCE_PLANE_STEER_GAIN * v_op, -max_yaw, max_yaw))
+        if abs(yaw) < 1e-6:
+            return desired_dir
+        # In-plane component of the commanded direction, then rotate by `yaw`
+        # toward the plane normal (sign of yaw already steers against v_op).
+        d_ip = desired_dir - dot3(desired_dir, n) * n
+        d_ip_mag = norm3(d_ip)
+        if d_ip_mag < 1e-6:
+            return desired_dir
+        d_ip /= d_ip_mag
+        steered = d_ip * math.cos(yaw) + n * math.sin(yaw)
+        s_mag = norm3(steered)
+        return steered / s_mag if s_mag > 1e-10 else desired_dir
 
     def _update_peg_coefficients(
         self,
@@ -484,8 +523,17 @@ class GuidanceLaw:
         return body_to_eci(np.array([1.0, 0.0, 0.0]), q)
 
     @staticmethod
-    def _compute_launch_downrange() -> np.ndarray:
-        """Compute the downrange direction in ECI at t=0 from launch azimuth."""
+    def _compute_launch_downrange(rotation_correction: bool = False) -> np.ndarray:
+        """Downrange direction in ECI at t=0 for the target inclination.
+
+        The *inertial* azimuth (``sin Az = cos i / cos lat``) defines the target
+        orbital plane. With ``rotation_correction`` the returned direction is the
+        Earth-rotation-corrected *flight* azimuth — the ground-relative heading a
+        gravity turn must fly so the resulting inertial velocity (flight velocity
+        plus the launch-site eastward rotation ``ω R cos lat``) lands in that
+        plane (AD-17). Without it, the raw inertial-azimuth direction is returned
+        (used to fix the target-plane normal).
+        """
         lat_rad = math.radians(config.LAUNCH_LAT_DEG)
         lon_rad = math.radians(config.LAUNCH_LON_DEG)
 
@@ -493,6 +541,16 @@ class GuidanceLaw:
         cos_lat = math.cos(lat_rad)
         sin_az = min(1.0, cos_inc / max(cos_lat, 1e-10))
         cos_az = math.sqrt(max(0.0, 1.0 - sin_az**2))
+
+        if rotation_correction:
+            # Flight azimuth: subtract the launch-site eastward rotation velocity
+            # from the required inertial eastward velocity (Az from north, toward east).
+            v_orb = config.TARGET_VELOCITY_MS
+            v_eqrot = config.EARTH_OMEGA * config.EARTH_RADIUS_M * cos_lat
+            east_rel = v_orb * sin_az - v_eqrot
+            north_rel = v_orb * cos_az
+            az = math.atan2(east_rel, north_rel)
+            sin_az, cos_az = math.sin(az), math.cos(az)
 
         sin_lat = math.sin(lat_rad)
         sin_lon = math.sin(lon_rad)

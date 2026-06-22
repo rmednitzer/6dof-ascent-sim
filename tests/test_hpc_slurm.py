@@ -37,6 +37,7 @@ def _fake_run_simulation(config_override=None, quiet=True):
         insertion_altitude_m=400_000.0 + seed,
         insertion_velocity_ms=7670.0 + (seed % 10),
         insertion_fpa_deg=0.1,
+        insertion_inclination_deg=51.6,
         peak_q_pa=30_000.0 + idx,
         peak_axial_g=5.0,
         peak_ekf_uncertainty_m=3.0,

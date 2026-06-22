@@ -42,8 +42,8 @@ A repro for each is reproducible from the commands quoted in "Evidence".
 | AD-14 | low | `compute_statistics([])` crashes on empty results (`np.max([])`) | `sim/montecarlo/statistics.py` | **fixed** |
 | AD-15 | low | Downlink telemetry omits the t = 0 frame (pre-increment off-by-one) | `sim/telemetry/recorder.py` | **fixed** |
 | AD-16 | low | `eci_to_ned` ignores ECI→ECEF rotation + transport term (unused) | `sim/core/reference_frames.py` | **fixed** |
-| AD-17 | info | Launch azimuth ignores Earth-rotation contribution to inclination | `sim/gnc/guidance.py` | documented (accepted simplification) |
-| AD-19 | medium | PEG terminal phase rides the 25° FTS attitude limit under dispersions (found via AD-17) | `sim/gnc/guidance.py` | recorded |
+| AD-17 | info | Launch azimuth ignores Earth-rotation contribution to inclination | `sim/gnc/guidance.py` | resolved (ADR 0024 — azimuth correction + yaw plane-steering; 45°→51° incl, correction-dv 995→74 m/s) |
+| AD-19 | medium | PEG terminal phase rides the 25° FTS attitude limit under dispersions (found via AD-17) | `sim/gnc/guidance.py` | resolved (N-01: ADR 0021 Isp margin + 0023 ground tracking; dispersed abort rate 19%→0%) |
 
 **Update 2026-06-14 (fidelity pass):** AD-02, AD-03, AD-05–AD-16 were fixed on
 branch `claude/amazing-lamport-tn1h3b`, each with a regression test in
@@ -334,6 +334,13 @@ change tips more marginal seeds over. AD-17 is therefore **accepted as a
 simplification** and the launch-azimuth code is left at the inertial relation;
 re-attempt once AD-19 (PEG terminal attitude-margin hardening) lands.
 
+**Resolved 2026-06-22 (ADR 0024).** AD-19 was cleared by the N-01 work (ADR 0021 S2
+Isp margin + ADR 0023 ground-station tracking → dispersed abort rate 0%), so the
+azimuth correction + terminal yaw out-of-plane steering were re-applied and now
+land cleanly: inclination 44.98°→**51.04°** (correction-dv ~995→**74 m/s**), peak
+loads unchanged, and Monte-Carlo robustness **holds at 24/24** (the same fix that
+dropped 39→35 in the original sweep). Inclination is now a golden-pinned output.
+
 ### AD-19 (medium) — PEG terminal phase rides the 25° FTS attitude limit
 
 Found during the AD-17 investigation. Under Monte-Carlo dispersions ~19% of runs
@@ -346,6 +353,13 @@ Monte-Carlo failure mode and it blocks AD-17 (any trajectory change perturbs the
 marginal population). Fix needs a PEG terminal-guidance hardening pass (smoother
 gravity-turn→PEG handover, command-rate vs low-propellant control authority near
 cutoff) — a dedicated control-design task, recorded rather than guessed.
+
+**Resolved 2026-06-22 (N-01).** The dominant terminal aborts turned out to be S2
+propellant depleting just short of orbit (the unpowered vehicle tumbling past the
+25° limit), not a control-design flaw: ADR 0021 (S2 Isp margin) removed them and
+ADR 0023 (ground-station tracking) bounded the coast covariance, taking the
+dispersed abort rate 19%→0% and moving the terminal phase off the limit — which in
+turn unblocked AD-17 (ADR 0024).
 
 ## Positive controls (verified clean)
 

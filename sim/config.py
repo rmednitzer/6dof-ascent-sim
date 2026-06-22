@@ -227,6 +227,18 @@ VERTICAL_RISE_TIME_S = 7.0  # Duration of vertical rise phase
 # keeps the command trackable so the FTS attitude check is meaningful.
 GUIDANCE_MAX_CMD_RATE_DEG_S = 8.0
 
+# Out-of-plane (yaw) steering for inclination targeting (ADR 0024 / AD-17). A pure
+# gravity turn following the Earth-relative velocity misses the target inclination
+# (achieves ~45° vs the 51.6° target), because (1) the launch azimuth ignores the
+# launch-site eastward rotation velocity and (2) nothing actively holds the target
+# inertial orbital plane. The terminal phase steers thrust to null the inertial
+# out-of-plane velocity relative to that plane; the steering angle is proportional
+# to the out-of-plane velocity and clamped so the commanded attitude stays
+# trackable (the FTS attitude check sees the small *tracking* error, not the
+# commanded yaw) and within structural side-load margins.
+GUIDANCE_PLANE_STEER_GAIN = 0.0025  # rad of yaw per (m/s) of out-of-plane velocity
+GUIDANCE_MAX_YAW_DEG = 12.0  # max out-of-plane steering angle (deg)
+
 # ---------- Control gains ----------
 # Baseline gains at reference condition (q=10kPa, full mass)
 # Gain scheduling scales these with dynamic pressure and mass ratio
