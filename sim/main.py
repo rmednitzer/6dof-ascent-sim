@@ -230,6 +230,7 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
 
     # Tracking variables
     outcome = "TIMEOUT"
+    insertion_inclination_deg: float | None = None
     fts_trigger_time = None
     peak_q = 0.0
     peak_axial_g = 0.0
@@ -629,9 +630,10 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
             )
 
         # --- Insertion check: SUCCESS only for a genuine, sustainable orbit ---
-        inserted, _ = _is_orbital_insertion(true_state, vehicle.stage_index)
-        if inserted:
+        inserted, ins_elements = _is_orbital_insertion(true_state, vehicle.stage_index)
+        if inserted and ins_elements is not None:
             outcome = "SUCCESS"
+            insertion_inclination_deg = ins_elements.inclination_deg
             if not quiet:
                 print(f"  ORBITAL INSERTION at t={t:.1f}s!")
             break
@@ -640,9 +642,10 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
     # predicate, including the stage gate). A run that times out is only
     # SUCCESS if it actually reached orbit.
     if outcome == "TIMEOUT":
-        inserted, _ = _is_orbital_insertion(true_state, vehicle.stage_index)
-        if inserted:
+        inserted, ins_elements = _is_orbital_insertion(true_state, vehicle.stage_index)
+        if inserted and ins_elements is not None:
             outcome = "SUCCESS"
+            insertion_inclination_deg = ins_elements.inclination_deg
 
     # Compute flight path angle
     final_fpa = 0.0
@@ -709,6 +712,7 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
         insertion_altitude_m=true_state.altitude_m() if outcome == "SUCCESS" else None,
         insertion_velocity_ms=true_state.velocity_mag_ms() if outcome == "SUCCESS" else None,
         insertion_fpa_deg=final_fpa if outcome == "SUCCESS" else None,
+        insertion_inclination_deg=insertion_inclination_deg if outcome == "SUCCESS" else None,
         peak_q_pa=peak_q,
         peak_axial_g=peak_axial_g,
         peak_ekf_uncertainty_m=peak_ekf_uncertainty,

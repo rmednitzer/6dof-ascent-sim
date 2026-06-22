@@ -53,20 +53,24 @@ class TestNominalGolden:
     for ADR 0023 (ground-station range tracking, N-01): continuous position aiding
     through the coast drops ``peak_ekf_uncertainty_m`` 1707->521 m and, via the
     sharper position estimate fed to guidance, flies a slightly more circular
-    insertion (fpa 0.80->0.32 deg, peak-q -2%).
+    insertion (fpa 0.80->0.32 deg, peak-q -2%). Re-baselined again 2026-06-22 for
+    ADR 0024 (AD-17 inclination targeting): azimuth correction + terminal yaw
+    out-of-plane steering reach ``insertion_inclination_deg`` ~45->51.04 deg
+    (target 51.6), which shifts the terminal trajectory (fpa 0.32->0.70).
     """
 
     # Golden summary of the deterministic nominal run (seed 0).
     _GOLD = {
         "outcome": "SUCCESS",
-        "insertion_altitude_m": 407_608.5,
-        "insertion_velocity_ms": 7_594.9,
-        "insertion_fpa_deg": 0.322,
-        "peak_q_pa": 31_714.5,
+        "insertion_altitude_m": 407_178.5,
+        "insertion_velocity_ms": 7_601.4,
+        "insertion_fpa_deg": 0.700,
+        "insertion_inclination_deg": 51.04,
+        "peak_q_pa": 31_725.4,
         "peak_axial_g": 5.40,
-        "peak_ekf_uncertainty_m": 521.1,
-        "boundary_clamp_count": 307,
-        "total_time_s": 493.1,
+        "peak_ekf_uncertainty_m": 561.4,
+        "boundary_clamp_count": 297,
+        "total_time_s": 493.8,
     }
 
     def test_nominal_summary_matches_golden(self):
@@ -86,6 +90,8 @@ class TestNominalGolden:
         npt.assert_allclose(result.peak_axial_g, g["peak_axial_g"], rtol=1e-3)
         # Flight-path angle is small; compare absolutely.
         npt.assert_allclose(result.insertion_fpa_deg, g["insertion_fpa_deg"], atol=0.25)
+        # Inclination is actively targeted (ADR 0024); pin it near the target.
+        npt.assert_allclose(result.insertion_inclination_deg, g["insertion_inclination_deg"], atol=0.30)
         # Insertion time: within a couple of integration steps' worth of drift.
         npt.assert_allclose(result.total_time_s, g["total_time_s"], atol=1.0)
         # Clamp count is an integer event tally — allow a small band for

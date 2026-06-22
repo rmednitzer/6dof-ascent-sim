@@ -32,6 +32,7 @@ class MonteCarloResult:
     insertion_altitude_m: float | None
     insertion_velocity_ms: float | None
     insertion_fpa_deg: float | None
+    insertion_inclination_deg: float | None
     peak_q_pa: float
     peak_axial_g: float
     peak_ekf_uncertainty_m: float
@@ -66,6 +67,7 @@ def _run_single(args: tuple[int, int, dict]) -> dict:
                 insertion_altitude_m=None,
                 insertion_velocity_ms=None,
                 insertion_fpa_deg=None,
+                insertion_inclination_deg=None,
                 peak_q_pa=0.0,
                 peak_axial_g=0.0,
                 peak_ekf_uncertainty_m=0.0,
