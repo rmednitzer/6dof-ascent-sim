@@ -471,20 +471,20 @@
         <div class="wrap">
           <div class="head">
             <div class="kicker">Interactive · drag to rotate</div>
-            <h2>3D ascent trajectory</h2>
+            <h2>3D ascent &amp; projected orbit</h2>
             <p class="sub">
-              The powered ascent in Earth-centered inertial (ECI) coordinates, colored by altitude. The
-              default view is a side-on profile that shows off the vertical lift-off and gravity turn —
-              drag to orbit the view, scroll to zoom.
+              The powered ascent (bright, altitude-colored) in Earth-centered inertial coordinates,
+              rising into the <b>projected orbit</b> it reaches — the achieved 466&nbsp;×&nbsp;140&nbsp;km
+              LEO propagated one revolution (cyan). Drag to orbit the view, scroll to zoom.
             </p>
           </div>
           <div class="panel"><div id="traj3d" class="plot-xl"></div></div>
           <img class="fallback" id="traj3dFallback" src="dashboard.png" alt="Mission dashboard (static fallback)." />
           <p class="cap">
-            From <b id="capLaunch">Kennedy Space Center</b> to orbital insertion at
-            <b id="capApo">~466 km apogee</b>. Radial altitude is exaggerated ~10× so the climb is
-            visible against the 6,378&nbsp;km globe; the downrange path is to scale. Color encodes true
-            altitude.
+            From <b id="capLaunch">Kennedy Space Center</b> up to insertion at
+            <b id="capApo">~466 km apogee</b>, then the projected orbit (cyan) the vehicle coasts onto.
+            Radial altitude is exaggerated ~10× so the climb and orbit stand off the 6,378&nbsp;km globe;
+            the colorbar encodes true ascent altitude.
           </p>
         </div>
       </section>
@@ -847,7 +847,7 @@ pytest tests/ -v                          <span class="c"># run the test suite</
         renderHealth(s, ev, m);
 
         // 3D trajectory + ground track ------------------------------------
-        renderTrajectory3D(s, m);
+        renderTrajectory3D(s, m, data.projected);
         renderGeo(s, m);
       }
 
@@ -941,7 +941,7 @@ pytest tests/ -v                          <span class="c"># run the test suite</
         };
       }
 
-      function renderTrajectory3D(s, m) {
+      function renderTrajectory3D(s, m, proj) {
         const R = m.earth_radius_km;
         const sp = sphere(R, 36);
         const gr = graticule(R * 1.001);
@@ -985,6 +985,30 @@ pytest tests/ -v                          <span class="c"># run the test suite</
           hovertemplate: "t=%{customdata[0]:.0f}s · alt %{customdata[1]:.0f} km<extra></extra>",
           name: "",
         };
+
+        // Projected trajectory: the achieved orbit propagated one revolution from
+        // insertion (same radial exaggeration), so it joins the ascent arc
+        // seamlessly and shows the LEO the vehicle has reached.
+        let projTraces = [];
+        if (proj && Array.isArray(proj.x_km) && proj.x_km.length) {
+          const m2 = proj.x_km.length;
+          const qx = new Array(m2), qy = new Array(m2), qz = new Array(m2);
+          for (let i = 0; i < m2; i++) {
+            const x = proj.x_km[i], y = proj.y_km[i], z = proj.z_km[i];
+            const r = Math.hypot(x, y, z) || 1;
+            const f = (R + (r - R) * EXAG) / r;
+            qx[i] = x * f; qy[i] = y * f; qz[i] = z * f;
+          }
+          projTraces = [
+            {
+              type: "scatter3d", mode: "lines",
+              x: qx, y: qy, z: qz,
+              line: { color: "rgba(125,211,252,0.55)", width: 3 },
+              hovertemplate: "projected orbit<extra></extra>",
+              name: "Projected orbit", showlegend: false,
+            },
+          ];
+        }
         // Markers are dots only; the labels are added as scene annotations
         // (HTML overlays) below so they render on top of the globe and can never
         // be occluded by it. The marker is lifted fractionally off the surface.
@@ -995,26 +1019,28 @@ pytest tests/ -v                          <span class="c"># run the test suite</
           hoverinfo: "skip", showlegend: false,
         });
 
-        // Default camera: a side-on profile that shows off the vertical climb.
-        // `up` is the local vertical at the launch site, so the initial ascent
-        // points straight up on screen; the eye is offset along the trajectory-
-        // plane normal so we view the rise + gravity turn edge-on.
+        // Default camera: frame the whole Earth + projected orbit, viewed
+        // obliquely to the orbit plane so the orbit reads as an ellipse and the
+        // bright ascent arc is seen rising into it. `up` is the local vertical at
+        // the launch site so the ascent still points broadly upward.
         const norm = (a) => { const L = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / L, a[1] / L, a[2] / L]; };
         const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
         const start = [px[0], py[0], pz[0]];
         const end = [px[n - 1], py[n - 1], pz[n - 1]];
         let cx = 0, cy = 0, cz = 0;
         for (let i = 0; i < n; i++) { cx += px[i]; cy += py[i]; cz += pz[i]; }
-        const u = norm([cx, cy, cz]); // direction to the arc centroid (centres the framing)
+        const u = norm([cx, cy, cz]); // direction to the ascent centroid
         const upLocal = norm(start); // local vertical at the pad
-        let planeN = norm(cross(start, end)); // trajectory-plane normal
+        let planeN = norm(cross(start, end)); // orbit-plane normal
         if (planeN[2] < 0) planeN = planeN.map((c) => -c); // keep a consistent side
-        const center = { x: u[0] * 0.6, y: u[1] * 0.6, z: u[2] * 0.6 };
-        const eye = {
-          x: u[0] * 0.95 + planeN[0] * 1.1,
-          y: u[1] * 0.95 + planeN[1] * 1.1,
-          z: u[2] * 0.95 + planeN[2] * 1.1,
-        };
+        const eyeDir = norm([
+          u[0] * 0.5 + planeN[0] * 0.9,
+          u[1] * 0.5 + planeN[1] * 0.9,
+          u[2] * 0.5 + planeN[2] * 0.9,
+        ]);
+        const D = 2.35;
+        const center = { x: 0, y: 0, z: 0 };
+        const eye = { x: eyeDir[0] * D, y: eyeDir[1] * D, z: eyeDir[2] * D };
         const up = { x: upLocal[0], y: upLocal[1], z: upLocal[2] };
 
         const layout = baseLayout({
@@ -1036,7 +1062,7 @@ pytest tests/ -v                          <span class="c"># run the test suite</
             ],
           },
         });
-        Plotly.newPlot("traj3d", [earth, grat, path, mk(0, C.ok, "circle", 1.012), mk(n - 1, C.pink, "diamond", 1.0)], layout, PCONF);
+        Plotly.newPlot("traj3d", [earth, grat, ...projTraces, path, mk(0, C.ok, "circle", 1.012), mk(n - 1, C.pink, "diamond", 1.0)], layout, PCONF);
       }
 
       function renderGeo(s, m) {
