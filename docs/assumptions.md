@@ -28,6 +28,7 @@
 - **Ignition and shutdown transients** modeled as 0.5 s linear ramps.
 - **No combustion instability**, nozzle erosion, or mixture ratio effects.
 - **Stage 2 operates in vacuum only**: `thrust_sl = thrust_vac` and `isp_sl = isp_vac` (`sim/vehicle/vehicle.py`, STAGE_2 definition).
+- **Stage 2 carries a performance margin via Isp** (`S2_ISP_VAC_S` = 356 s, ADR 0021): raised from 348 s (+2.3%) so the upper stage reaches orbit with margin. The earlier value inserted with almost no reserve, so sub-1-sigma adverse propulsion/drag dispersions left the stage just short of orbit — the dominant driver of the Monte-Carlo abort rate (N-01). Margin was added through Isp rather than propellant because the nominal trajectory is chaotically sensitive to liftoff mass (a propellant increase flips it between SUCCESS and abort across small mass steps), whereas raising Isp leaves liftoff mass and the nominal trajectory unchanged.
 - No propellant sloshing effect on the feed system.
 
 ## Aerodynamics

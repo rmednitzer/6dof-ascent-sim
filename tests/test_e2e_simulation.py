@@ -116,6 +116,35 @@ class TestEstimatedAttitudeClosedLoop:
         assert result.fts_trigger_time_s is None  # no false trip
 
 
+class TestPerformanceMargin:
+    """ADR 0021 (BACKLOG N-01): the Stage-2 dispersed abort rate was dominated by
+    the upper stage reaching insertion just short on performance under adverse
+    propulsion/drag dispersion — the tank emptied a few tens of m/s shy of orbit
+    and the unpowered vehicle tumbled into an FTS attitude trip. The margin was
+    added via S2 Isp (348 → 356 s), not propellant: a propellant increase changes
+    liftoff mass and the nominal trajectory is chaotically sensitive to it
+    (flips SUCCESS/abort across small mass steps), whereas the Isp lever leaves
+    liftoff mass — and the nominal — intact.
+
+    This guards that margin: a dispersed seed that previously fell short of orbit
+    now reaches it. If the S2 Isp default is cut back, this fails.
+    """
+
+    def test_former_performance_shortfall_seed_now_reaches_orbit(self):
+        import numpy as np
+
+        from sim.montecarlo.dispersions import DEFAULT_DISPERSIONS, generate_dispersed_config
+
+        seed = 49  # pre-margin this reached insertion just short of orbit and tumbled
+        override = generate_dispersed_config(DEFAULT_DISPERSIONS, np.random.default_rng(seed))
+        override["_seed"] = seed
+        override["_run_index"] = 0
+        result = run_simulation(config_override=override, quiet=True)
+        assert result.outcome == "SUCCESS", f"seed {seed}: expected orbit with margin, got {result.outcome}"
+        assert result.fts_trigger_time_s is None
+        assert result.insertion_velocity_ms >= config.INSERTION_MIN_VELOCITY_FRAC * config.TARGET_VELOCITY_MS
+
+
 class TestFlexControlStructureInteraction:
     """AD-04: the flex model is now live in the control loop, stabilised by a
     frequency-scheduled structural notch filter.

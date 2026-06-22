@@ -37,3 +37,4 @@ changes from the 2026-06-21 cross-repo lessons pass (`audit/05`).
 | [0018](0018-context-local-overridable-config.md) | Context-local overridable config (ADR-0009 step 2; supersedes ADR-0004 override) | accepted |
 | [0019](0019-defer-vectorized-monte-carlo.md) | Defer vectorized Monte Carlo (X-14) — spike evidence | accepted |
 | [0020](0020-error-state-attitude-ekf.md) | Error-state attitude EKF + star-tracker attitude aiding (X-11) | accepted |
+| [0021](0021-stage2-performance-margin.md) | Stage-2 Isp performance margin (N-01) | accepted |
