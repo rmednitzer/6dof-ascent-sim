@@ -173,6 +173,14 @@ class EngineModel:
         return self._ignited
 
     @property
+    def in_thrust_transient(self) -> bool:
+        """True while ramping through an ignition or shutdown transient.
+
+        Thrust is intentionally off its commanded value during a ramp, so health
+        monitoring should not compare commanded vs actual thrust here (Q-03)."""
+        return self._transient_elapsed < self._transient_duration
+
+    @property
     def effective_throttle(self) -> float:
         """Current effective throttle after transient envelope [0, 1]."""
         return self._effective_throttle
