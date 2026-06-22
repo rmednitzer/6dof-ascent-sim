@@ -1,25 +1,31 @@
-"""Extended Kalman Filter for launch vehicle navigation.
+"""Error-state Extended Kalman Filter for launch-vehicle navigation.
 
-12-state EKF estimating position, velocity, accelerometer bias, and gyro bias
-using IMU, GPS, and barometric altimeter measurements.
+15-error-state EKF estimating attitude, position, velocity, accelerometer bias,
+and gyro bias from IMU, GPS, and barometric-altimeter measurements. Attitude is
+carried as a nominal quaternion (propagated from the *measured* gyro) plus a
+3-DOF multiplicative error in the covariance — the standard error-state /
+multiplicative-EKF formulation. This replaces the earlier 12-state filter that
+did not estimate attitude (it was handed the true quaternion); see ADR 0020.
 
-Includes coning and sculling compensation for strapdown IMU mechanization,
-following Savage's two-sample algorithm.
+Nominal state (stored in ``_x``, 12 elements) + nominal quaternion (``_quat``):
+    [px, py, pz, vx, vy, vz, bax, bay, baz, bgx, bgy, bgz]  (ECI pos/vel; body bias)
+Error state (tracked by the 15x15 covariance ``_P``):
+    [δpx..δpz, δvx..δvz, δbax..δbaz, δbgx..δbgz, δθx, δθy, δθz]
+where δθ is a small ECI-frame attitude error: R_true_b2n = exp([δθ]_x) R_est_b2n.
 
-State vector: [px, py, pz, vx, vy, vz, bax, bay, baz, bgx, bgy, bgz]
-    - position (ECI, m)
-    - velocity (ECI, m/s)
-    - accelerometer bias (body frame, m/s^2)
-    - gyro bias (body frame, rad/s)
+Continuous error dynamics (ECI nav frame; f_n = R_b2n f_b is specific force):
+    δṗ = δv
+    δv̇ = -[f_n]_x δθ - R_b2n δb_a
+    δθ̇ = -R_b2n δb_g
+    δḃ_a = δḃ_g = 0   (random walks, driven by process noise)
 
 References:
-    Savage, P.G., "Strapdown Inertial Navigation Integration Algorithm
-    Design Part 1: Attitude Algorithms", AIAA Journal of Guidance,
-    Control, and Dynamics, Vol. 21, No. 1, 1998.
-    Savage, P.G., "Strapdown Inertial Navigation Integration Algorithm
-    Design Part 2: Velocity and Position Algorithms", AIAA JGCD, 1998.
-    Titterton & Weston, *Strapdown Inertial Navigation Technology*,
-    2nd ed., Ch. 11.
+    Sola, J. (2017), "Quaternion kinematics for the error-state Kalman filter".
+    Groves, P. (2013), "Principles of GNSS, Inertial, and Multisensor
+    Integrated Navigation Systems", 2nd ed., Ch. 14 (error dynamics).
+    Savage, P.G. (1998), AIAA JGCD (coning/sculling).
+    Titterton & Weston, *Strapdown Inertial Navigation Technology*, 2nd ed.
+    Cross-checked against the PX4 ECL/EKF2 error-state formulation.
 """
 
 from __future__ import annotations
@@ -32,9 +38,18 @@ from scipy.stats import chi2
 
 from sim import config
 from sim.core.fast_math import cross3
-from sim.core.reference_frames import quat_to_dcm
+from sim.core.reference_frames import (
+    quat_to_dcm,
+    quaternion_conjugate,
+    quaternion_from_axis_angle,
+    quaternion_multiply,
+)
 from sim.core.state import VehicleState
-from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement
+from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement, StarTrackerMeasurement
+
+# Error-state indices.
+_P_IDX, _V_IDX, _BA_IDX, _BG_IDX, _TH_IDX = 0, 3, 6, 9, 12
+N_ERR = 15
 
 
 @lru_cache(maxsize=16)
@@ -42,76 +57,190 @@ def _nis_gate_threshold(dim: int, gate_p: float) -> float:
     """Chi-square quantile used by the EKF innovation-consistency (NIS) gate.
 
     The normalised innovation squared ``yᵀ S⁻¹ y`` is chi-square distributed
-    with ``dim`` degrees of freedom under the filter-consistency hypothesis;
-    a measurement is rejected when it exceeds the ``gate_p`` quantile.  Cached
-    because only a couple of (dim, gate_p) pairs ever occur (GPS dim 6, baro
-    dim 1) and ``chi2.ppf`` is comparatively expensive.
+    with ``dim`` degrees of freedom under the filter-consistency hypothesis; a
+    measurement is rejected when it exceeds the ``gate_p`` quantile.
     """
     return float(chi2.ppf(gate_p, dim))
 
 
+def _skew(v: np.ndarray) -> np.ndarray:
+    """Skew-symmetric cross-product matrix [v]_x."""
+    return np.array(
+        [
+            [0.0, -v[2], v[1]],
+            [v[2], 0.0, -v[0]],
+            [-v[1], v[0], 0.0],
+        ]
+    )
+
+
+def _coning_sculling_dv(
+    accel_body: np.ndarray,
+    gyro_body: np.ndarray,
+    prev_accel: np.ndarray,
+    prev_gyro: np.ndarray,
+    prev_valid: bool,
+    dt: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Savage two-sample coning/sculling-compensated angle and velocity increments.
+
+    Returns ``(theta_corrected, dv_body)`` — the attitude increment (rad) and the
+    body-frame velocity increment (m/s) for this sample.
+    """
+    theta_curr = gyro_body * dt
+    dv_curr = accel_body * dt
+    if not prev_valid:
+        return theta_curr, dv_curr
+    theta_prev = prev_gyro * dt
+    dv_prev = prev_accel * dt
+    theta_corrected = theta_curr + (2.0 / 3.0) * cross3(theta_prev, theta_curr)
+    dv_corrected = dv_curr + (2.0 / 3.0) * (cross3(theta_prev, dv_curr) + cross3(dv_prev, theta_curr))
+    dv_body = dv_corrected + 0.5 * cross3(theta_corrected, dv_corrected)
+    return theta_corrected, dv_body
+
+
+def _propagate_nominal(
+    pos: np.ndarray,
+    vel: np.ndarray,
+    quat: np.ndarray,
+    theta_corrected: np.ndarray,
+    dv_body: np.ndarray,
+    gravity_eci: np.ndarray,
+    dt: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Propagate the nominal (pos, vel, quaternion) one step. Pure (no state).
+
+    Attitude integrates the (coning-corrected) body angular increment via the
+    quaternion exponential map; velocity/position integrate the body specific
+    force rotated into ECI by the *current* attitude estimate.
+    """
+    R_b2e = quat_to_dcm(quat).T
+    dv_eci = R_b2e @ dv_body
+    dv_total = dv_eci + gravity_eci * dt
+    pos_n = pos + vel * dt + 0.5 * dv_total * dt
+    vel_n = vel + dv_total
+    # Quaternion update: body-frame increment -> right-multiply.
+    angle = float(np.linalg.norm(theta_corrected))
+    if angle > 1e-12:
+        dq = quaternion_from_axis_angle(theta_corrected / angle, angle)
+        quat_n = quaternion_multiply(quat, dq)
+    else:
+        quat_n = quat.copy()
+    n = float(np.linalg.norm(quat_n))
+    if n > 1e-12:
+        quat_n = quat_n / n
+    return pos_n, vel_n, quat_n
+
+
+def _error_state_transition(R_b2e: np.ndarray, f_n: np.ndarray, dt: float) -> np.ndarray:
+    """Discrete error-state transition F (15x15), F = I + A·dt to first order.
+
+    Encodes the INS error dynamics (see module docstring): position integrates
+    velocity error; velocity error is driven by the attitude error through the
+    specific-force coupling ``-[f_n]_x`` and by accel-bias error through
+    ``-R_b2e``; attitude error is driven by gyro-bias error through ``-R_b2e``.
+    The second-order ``δp <- δθ, δb_a`` terms (½·(…)·dt²) are retained so a
+    single 100 Hz step matches the finite-difference Jacobian of the nominal
+    propagation closely (validated in ``tests/test_ekf.py``).
+    """
+    F = np.eye(N_ERR)
+    dt_sq = dt * dt
+    F[_P_IDX : _P_IDX + 3, _V_IDX : _V_IDX + 3] = np.eye(3) * dt  # δp <- δv
+    F[_V_IDX : _V_IDX + 3, _BA_IDX : _BA_IDX + 3] = -R_b2e * dt  # δv <- δb_a
+    F[_P_IDX : _P_IDX + 3, _BA_IDX : _BA_IDX + 3] = -0.5 * R_b2e * dt_sq
+    skew_fn = _skew(f_n)
+    F[_V_IDX : _V_IDX + 3, _TH_IDX : _TH_IDX + 3] = -skew_fn * dt  # δv <- δθ (attitude -> vel)
+    F[_P_IDX : _P_IDX + 3, _TH_IDX : _TH_IDX + 3] = -0.5 * skew_fn * dt_sq
+    F[_TH_IDX : _TH_IDX + 3, _BG_IDX : _BG_IDX + 3] = -R_b2e * dt  # δθ <- δb_g (gyro bias -> attitude)
+    return F
+
+
+def _process_noise(dt: float) -> np.ndarray:
+    """Discrete process-noise covariance Q (15x15).
+
+    Accelerometer white noise drives the position/velocity block (with the exact
+    integrated cross term); gyro white noise drives the attitude block; the two
+    bias-instability random walks drive their own blocks.
+    """
+    Q = np.zeros((N_ERR, N_ERR))
+    dt_sq = dt * dt
+    accel_var = config.IMU_ACCEL_NOISE_MPS2**2
+    gyro_var = config.IMU_GYRO_NOISE_RADS**2
+    q_pos = accel_var * dt_sq * dt_sq / 4.0
+    q_vel = accel_var * dt_sq
+    q_cross = accel_var * dt_sq * dt / 2.0
+    q_bias_a = config.IMU_ACCEL_BIAS_MPS2**2 * dt
+    q_bias_g = config.IMU_GYRO_BIAS_RADS**2 * dt
+    q_att = gyro_var * dt_sq
+    for i in range(3):
+        Q[_P_IDX + i, _P_IDX + i] = q_pos
+        Q[_V_IDX + i, _V_IDX + i] = q_vel
+        Q[_BA_IDX + i, _BA_IDX + i] = q_bias_a
+        Q[_BG_IDX + i, _BG_IDX + i] = q_bias_g
+        Q[_TH_IDX + i, _TH_IDX + i] = q_att
+        Q[_P_IDX + i, _V_IDX + i] = q_cross
+        Q[_V_IDX + i, _P_IDX + i] = q_cross
+    return Q
+
+
 class NavigationEKF:
-    """12-state Extended Kalman Filter with coning/sculling compensation.
+    """15-error-state multiplicative EKF (attitude + pos/vel + IMU biases).
 
-    Predict at 100 Hz using strapdown IMU mechanisation with Savage's
-    two-sample coning and sculling corrections.  Update with GPS
-    (1 Hz, below 60 km) and barometer (10 Hz, below 40 km).
-
-    Coning compensation corrects for non-commutativity of finite rotations
-    under angular vibration.  Sculling compensation corrects for the
-    correlation between angular and linear vibrations that causes a
-    spurious velocity drift.
+    Predict at 100 Hz from the measured IMU (Savage coning/sculling); attitude
+    propagates from the bias-corrected gyro. Update with GPS (pos+vel) and
+    barometer; attitude is observed through the attitude-velocity coupling in the
+    error dynamics. Corrections are applied multiplicatively to the quaternion
+    with an error-state reset; covariance uses the Joseph form and a chi-square
+    innovation gate (ADR 0013).
 
     Args:
-        initial_state: Vehicle state used to seed the filter.
+        initial_state: Vehicle state used to seed the filter (its quaternion is
+            the known initial attitude, e.g. the launch-pad orientation).
     """
 
-    N_STATES: int = 12
+    N_STATES: int = N_ERR
 
     def __init__(self, initial_state: VehicleState) -> None:
-        # State vector
-        self._x = np.zeros(self.N_STATES)
+        self._x = np.zeros(12)  # nominal [pos, vel, ba, bg]
         self._x[0:3] = initial_state.position_eci.copy()
         self._x[3:6] = initial_state.velocity_eci.copy()
-        # biases initialised to zero
+        self._quat = initial_state.quaternion.copy()  # nominal attitude
 
-        # Covariance
+        # 15x15 error-state covariance. Attitude error seeded small but non-zero
+        # (the launch attitude is known but not perfect).
         self._P = np.diag(
-            [
-                100.0,
-                100.0,
-                100.0,  # position (m^2)
-                1.0,
-                1.0,
-                1.0,  # velocity (m/s)^2
-                1e-4,
-                1e-4,
-                1e-4,  # accel bias
-                1e-6,
-                1e-6,
-                1e-6,  # gyro bias
-            ]
+            np.array(
+                [
+                    100.0,
+                    100.0,
+                    100.0,  # position (m^2)
+                    1.0,
+                    1.0,
+                    1.0,  # velocity (m/s)^2
+                    1e-4,
+                    1e-4,
+                    1e-4,  # accel bias
+                    1e-6,
+                    1e-6,
+                    1e-6,  # gyro bias
+                    3e-4,
+                    3e-4,
+                    3e-4,  # attitude error (rad^2) ~ 1 deg 1-sigma
+                ]
+            )
         )
 
-        # Store latest quaternion estimate
-        self._quaternion = initial_state.quaternion.copy()
         self._angular_velocity_body = initial_state.angular_velocity_body.copy()
         self._mass_kg = initial_state.mass_kg
         self._time_s = initial_state.time_s
 
-        # Previous IMU samples for coning/sculling compensation
-        self._prev_gyro: np.ndarray = np.zeros(3)
-        self._prev_accel: np.ndarray = np.zeros(3)
-        self._prev_imu_valid: bool = False
+        self._prev_gyro = np.zeros(3)
+        self._prev_accel = np.zeros(3)
+        self._prev_imu_valid = False
 
-        # Pre-allocated matrices re-used every predict step
-        self._F: np.ndarray = np.eye(self.N_STATES)
-        self._Q: np.ndarray = np.zeros((self.N_STATES, self.N_STATES))
-        self._I3: np.ndarray = np.eye(3)
+        self._I15 = np.eye(N_ERR)
 
-        # Innovation-gate diagnostics (no telemetry-schema impact; useful for
-        # Monte-Carlo health analysis): count of measurements rejected by the
-        # NIS gate / non-finite guard, and the most recent NIS value.
+        # Diagnostics.
         self.measurement_rejections: int = 0
         self.last_nis: float = 0.0
 
@@ -119,175 +248,84 @@ class NavigationEKF:
 
     @property
     def state_vector(self) -> np.ndarray:
-        """Current 12-element state estimate."""
+        """Current 12-element nominal state [pos, vel, ba, bg]."""
         return self._x.copy()
 
     @property
     def covariance(self) -> np.ndarray:
-        """Current 12x12 covariance matrix."""
+        """Current 15x15 error-state covariance."""
         return self._P.copy()
 
+    @property
+    def quaternion(self) -> np.ndarray:
+        """Current attitude estimate (quaternion [x, y, z, w])."""
+        return self._quat.copy()
+
     def position_uncertainty_m(self) -> float:
-        """1-sigma position uncertainty: sqrt(trace(P[0:3, 0:3]))."""
+        """1-sigma position uncertainty: sqrt(trace(P_pos))."""
         P = self._P
         return math.sqrt(P[0, 0] + P[1, 1] + P[2, 2])
 
     def velocity_uncertainty_ms(self) -> float:
-        """1-sigma velocity uncertainty: sqrt(trace(P[3:6, 3:6]))."""
+        """1-sigma velocity uncertainty: sqrt(trace(P_vel))."""
         P = self._P
         return math.sqrt(P[3, 3] + P[4, 4] + P[5, 5])
 
+    def attitude_uncertainty_rad(self) -> float:
+        """1-sigma attitude uncertainty: sqrt(trace(P_att))."""
+        P = self._P
+        return math.sqrt(P[_TH_IDX, _TH_IDX] + P[_TH_IDX + 1, _TH_IDX + 1] + P[_TH_IDX + 2, _TH_IDX + 2])
+
     # -- predict step --------------------------------------------------------
 
-    def predict(
-        self,
-        imu: IMUMeasurement,
-        gravity_eci_mps2: np.ndarray,
-        dt: float,
-    ) -> None:
-        """Propagate state and covariance using IMU measurement.
-
-        Implements Savage's two-sample coning and sculling compensation:
-
-        **Coning correction** (attitude): Accounts for the fact that under
-        simultaneous rotation about two axes, the naive integration of
-        angular increments drifts.  The two-sample correction is:
-            delta_theta_coning = (2/3) * (theta_prev x theta_curr)
-        where theta = omega * dt is the angular increment.
-
-        **Sculling correction** (velocity): Accounts for correlation
-        between angular and linear vibrations that produces a net
-        velocity error.  The two-sample correction is:
-            delta_v_sculling = (2/3) * (theta_prev x dv_curr + dv_prev x theta_curr)
-
-        Args:
-            imu: IMU measurement for this timestep.
-            gravity_eci_mps2: Gravitational acceleration in ECI (m/s^2).
-            dt: Timestep (s).
-        """
+    def predict(self, imu: IMUMeasurement, gravity_eci_mps2: np.ndarray, dt: float) -> None:
+        """Propagate nominal state and error covariance from an IMU sample."""
         self._time_s = imu.time_s
+        ba = self._x[_BA_IDX : _BA_IDX + 3]
+        bg = self._x[_BG_IDX : _BG_IDX + 3]
 
-        # Current estimates
-        pos = self._x[0:3]
-        vel = self._x[3:6]
-        ba = self._x[6:9]
-        bg = self._x[9:12]
+        accel_body = imu.accel_body_mps2 - ba
+        gyro_body = imu.gyro_body_rads - bg
 
-        # Corrected IMU readings
-        accel_body_corrected = imu.accel_body_mps2 - ba
-        gyro_body_corrected = imu.gyro_body_rads - bg
-
-        # Angular and velocity increments for this sample
-        theta_curr = gyro_body_corrected * dt  # angular increment (rad)
-        dv_curr = accel_body_corrected * dt  # velocity increment (m/s)
-
-        # --- Coning compensation (Savage two-sample) ---
-        # Corrects for non-commutativity of finite rotations
-        if self._prev_imu_valid:
-            theta_prev = self._prev_gyro * dt
-            dv_prev = self._prev_accel * dt
-
-            # Coning correction to angular increment
-            coning_correction = (2.0 / 3.0) * cross3(theta_prev, theta_curr)
-            theta_corrected = theta_curr + coning_correction
-
-            # Sculling correction to velocity increment
-            sculling_correction = (2.0 / 3.0) * (cross3(theta_prev, dv_curr) + cross3(dv_prev, theta_curr))
-            dv_corrected = dv_curr + sculling_correction
-
-            # Rotation compensation for velocity (accounts for rotation
-            # during the integration interval)
-            dv_rot_comp = 0.5 * cross3(theta_corrected, dv_corrected)
-            dv_body = dv_corrected + dv_rot_comp
-        else:
-            dv_body = dv_curr
-
-        # Store current samples for next iteration
-        self._prev_gyro = gyro_body_corrected.copy()
-        self._prev_accel = accel_body_corrected.copy()
+        theta_corrected, dv_body = _coning_sculling_dv(
+            accel_body, gyro_body, self._prev_accel, self._prev_gyro, self._prev_imu_valid, dt
+        )
+        self._prev_gyro = gyro_body.copy()
+        self._prev_accel = accel_body.copy()
         self._prev_imu_valid = True
 
-        # Body-to-ECI rotation
-        R_body2eci = quat_to_dcm(self._quaternion).T
+        R_b2e = quat_to_dcm(self._quat).T
+        f_n = R_b2e @ accel_body  # specific force in ECI
 
-        # Specific force in ECI (using compensated velocity increment)
-        dv_eci = R_body2eci @ dv_body
+        pos_n, vel_n, quat_n = _propagate_nominal(
+            self._x[_P_IDX : _P_IDX + 3],
+            self._x[_V_IDX : _V_IDX + 3],
+            self._quat,
+            theta_corrected,
+            dv_body,
+            gravity_eci_mps2,
+            dt,
+        )
+        self._x[_P_IDX : _P_IDX + 3] = pos_n
+        self._x[_V_IDX : _V_IDX + 3] = vel_n
+        self._quat = quat_n
+        self._angular_velocity_body = gyro_body.copy()
 
-        # Total velocity change in ECI
-        dv_total = dv_eci + gravity_eci_mps2 * dt
-
-        # State propagation — position MUST be updated before velocity
-        # because pos and vel are numpy views into self._x (aliasing)
-        self._x[0:3] = pos + vel * dt + 0.5 * dv_total * dt
-        self._x[3:6] = vel + dv_total
-
-        # Update stored angular velocity
-        self._angular_velocity_body = gyro_body_corrected.copy()
-
-        # -- Covariance propagation via linearised dynamics --
-        # Reuse pre-allocated F (identity) and Q (zeros); patch in the
-        # time-varying blocks in place.
-        F = self._F
-        dt_sq = dt * dt
-        # F[0:3, 3:6] = I3 * dt
-        F[0, 3] = dt
-        F[1, 4] = dt
-        F[2, 5] = dt
-        # F[0:3, 6:9] = -0.5 * R_body2eci * dt**2
-        F[0:3, 6:9] = R_body2eci * (-0.5 * dt_sq)
-        # F[3:6, 6:9] = -R_body2eci * dt
-        F[3:6, 6:9] = R_body2eci * (-dt)
-
-        # Process noise covariance Q (populate only non-zero blocks).
-        Q = self._Q
-        accel_var = config.IMU_ACCEL_NOISE_MPS2**2
-        gyro_var = config.IMU_GYRO_NOISE_RADS**2
-        q_pos = accel_var * dt_sq * dt_sq / 4.0
-        q_vel = accel_var * dt_sq
-        q_cross = accel_var * dt_sq * dt / 2.0
-        q_bias_a = config.IMU_ACCEL_BIAS_MPS2**2 * dt
-        q_bias_g = config.IMU_GYRO_BIAS_RADS**2 * dt
-        # Gyro noise contribution to velocity (via attitude error)
-        a0, a1, a2 = accel_body_corrected
-        accel_sq = a0 * a0 + a1 * a1 + a2 * a2
-        q_vel += gyro_var * accel_sq * dt_sq
-
-        # Diagonal blocks (pos, vel, accel-bias, gyro-bias)
-        for i in range(3):
-            Q[i, i] = q_pos
-            Q[3 + i, 3 + i] = q_vel
-            Q[6 + i, 6 + i] = q_bias_a
-            Q[9 + i, 9 + i] = q_bias_g
-            Q[i, 3 + i] = q_cross
-            Q[3 + i, i] = q_cross
-
+        # --- Error-state transition F and process noise Q (15x15) ---
+        F = _error_state_transition(R_b2e, f_n, dt)
+        Q = _process_noise(dt)
         self._P = F @ self._P @ F.T + Q
         self._P = 0.5 * (self._P + self._P.T)
 
     # -- update steps --------------------------------------------------------
 
     def update_gps(self, gps: GPSMeasurement) -> None:
-        """Fuse a GPS measurement (position + velocity).
-
-        Measurement model: z = [pos; vel], H picks out states 0..5.
-
-        Args:
-            gps: GPS measurement.
-        """
-        # Measurement vector
+        """Fuse a GPS position+velocity measurement."""
         z = np.concatenate([gps.position_eci_m, gps.velocity_eci_ms])
-
-        # Predicted measurement
         z_pred = self._x[0:6]
-
-        # Innovation
         y = z - z_pred
-
-        # Observation matrix (6x12)
-        H = np.zeros((6, self.N_STATES))
+        H = np.zeros((6, N_ERR))
         H[0:6, 0:6] = np.eye(6)
-
-        # Measurement noise
         R = np.diag(
             [
                 config.GPS_POS_NOISE_M**2,
@@ -298,125 +336,85 @@ class NavigationEKF:
                 config.GPS_VEL_NOISE_MS**2,
             ]
         )
-
         self._apply_update(y, H, R)
 
     def update_baro(self, baro: BaroMeasurement) -> None:
-        """Fuse a barometric altitude measurement.
-
-        The barometer measures altitude = |position| - R_earth.
-        Linearised about the current position estimate.
-
-        Args:
-            baro: Barometer measurement.
-        """
+        """Fuse a barometric-altitude measurement (altitude = |pos| - R_earth)."""
         pos = self._x[0:3]
-        p0, p1, p2 = pos[0], pos[1], pos[2]
-        r = math.sqrt(p0 * p0 + p1 * p1 + p2 * p2)
+        r = math.sqrt(pos[0] ** 2 + pos[1] ** 2 + pos[2] ** 2)
         if r < 1.0:
-            return  # degenerate
-
-        # Predicted altitude
-        alt_pred = r - config.EARTH_RADIUS_M
-
-        # Innovation
-        y = np.array([baro.altitude_m - alt_pred])
-
-        # Jacobian of altitude w.r.t. position: d|r|/dr = r_hat
-        r_hat = pos / r
-        H = np.zeros((1, self.N_STATES))
-        H[0, 0:3] = r_hat
-
-        # Measurement noise
+            return
+        y = np.array([baro.altitude_m - (r - config.EARTH_RADIUS_M)])
+        H = np.zeros((1, N_ERR))
+        H[0, 0:3] = pos / r
         R = np.array([[config.BARO_ALT_NOISE_M**2]])
+        self._apply_update(y, H, R)
 
+    def update_star_tracker(self, star: StarTrackerMeasurement) -> None:
+        """Fuse a star-tracker inertial-attitude measurement (3-DOF δθ update).
+
+        The star tracker observes the full attitude directly, so the innovation
+        is the ECI-frame small-angle error between the measured and estimated
+        quaternion — ``q_meas = exp([δθ]_x) ⊗ q_est`` ⇒ ``δθ ≈ 2·vec(q_meas ⊗
+        q_est⁻¹)`` — and H is the identity on the attitude-error block. This
+        directly observes all three axes (including roll about the thrust axis,
+        which the GPS specific-force/velocity coupling cannot).
+        """
+        q_err = quaternion_multiply(star.quaternion, quaternion_conjugate(self._quat))
+        if q_err[3] < 0.0:
+            q_err = -q_err  # shortest rotation
+        y = 2.0 * q_err[0:3]
+        H = np.zeros((3, N_ERR))
+        H[0:3, _TH_IDX : _TH_IDX + 3] = np.eye(3)
+        R = np.eye(3) * config.STAR_TRACKER_NOISE_RAD**2
         self._apply_update(y, H, R)
 
     # -- private helpers -----------------------------------------------------
 
-    def _apply_update(
-        self,
-        y: np.ndarray,
-        H: np.ndarray,
-        R: np.ndarray,
-    ) -> None:
-        """Run the Kalman update with a chi-square innovation-consistency gate.
-
-        Rejects the measurement when its normalised innovation squared
-        (``NIS = yᵀ S⁻¹ y``) exceeds the chi-square quantile at
-        ``EKF_INNOVATION_GATE_P`` for the measurement dimension.  Unlike a
-        per-component ``|yᵢ| > kσᵢ`` test, this Mahalanobis distance accounts
-        for the full innovation covariance ``S`` (including cross-terms).  A
-        non-finite innovation or covariance is rejected outright as a counted
-        fault rather than propagated into the state.
-
-        Args:
-            y: Innovation (residual) vector.
-            H: Observation Jacobian.
-            R: Measurement noise covariance.
-        """
-        S = H @ self._P @ H.T + R  # innovation covariance
-
-        # Defence in depth: never ingest a non-finite measurement. The
-        # integrator also guards downstream, but a NaN must not reach the state.
+    def _apply_update(self, y: np.ndarray, H: np.ndarray, R: np.ndarray) -> None:
+        """Kalman update with NIS gating and a multiplicative attitude reset."""
+        S = H @ self._P @ H.T + R
         if not (np.all(np.isfinite(y)) and np.all(np.isfinite(S))):
             self.measurement_rejections += 1
             return
-
-        # Innovation-consistency (NIS / Mahalanobis) gate.
         nis = float(y @ np.linalg.solve(S, y))
         self.last_nis = nis
         if nis > _nis_gate_threshold(len(y), config.EKF_INNOVATION_GATE_P):
             self.measurement_rejections += 1
-            return  # reject entire measurement
+            return
 
-        # Kalman gain
         K = np.linalg.solve(S.T, H @ self._P).T
+        dx = K @ y  # 15-vector error correction
 
-        # State update
-        self._x = self._x + K @ y
+        # Apply additive corrections to the nominal pos/vel/biases ...
+        self._x = self._x + dx[0:12]
+        # ... and the attitude error multiplicatively to the quaternion (reset).
+        dtheta = dx[_TH_IDX : _TH_IDX + 3]
+        angle = float(np.linalg.norm(dtheta))
+        if angle > 1e-12:
+            dq = quaternion_from_axis_angle(dtheta / angle, angle)
+            # ECI-frame error: left-multiply (R_new_b2e = exp([dθ]) R_b2e).
+            self._quat = quaternion_multiply(dq, self._quat)
+            n = float(np.linalg.norm(self._quat))
+            if n > 1e-12:
+                self._quat = self._quat / n
 
-        # Covariance update (Joseph form for numerical stability)
-        I_KH = np.eye(self.N_STATES) - K @ H
+        I_KH = self._I15 - K @ H
         self._P = I_KH @ self._P @ I_KH.T + K @ R @ K.T
-
-        # Symmetrise
         self._P = 0.5 * (self._P + self._P.T)
 
     # -- estimated state output ----------------------------------------------
-
-    def set_attitude(
-        self,
-        quaternion: np.ndarray,
-        angular_velocity_body: np.ndarray,
-    ) -> None:
-        """Update the attitude estimate used for IMU mechanisation.
-
-        The EKF does not estimate attitude directly; it must be fed from
-        the gyro-propagated or controller-estimated quaternion.
-
-        Args:
-            quaternion: Attitude quaternion [x, y, z, w].
-            angular_velocity_body: Angular velocity in body frame (rad/s).
-        """
-        self._quaternion = quaternion.copy()
-        self._angular_velocity_body = angular_velocity_body.copy()
 
     def set_mass(self, mass_kg: float) -> None:
         """Update mass estimate (used only for state output)."""
         self._mass_kg = mass_kg
 
     def estimated_state(self) -> VehicleState:
-        """Build a VehicleState from the current EKF estimate.
-
-        Returns:
-            VehicleState with estimated position, velocity, and the
-            externally-provided attitude and mass.
-        """
+        """Build a VehicleState from the current estimate (incl. estimated attitude)."""
         return VehicleState(
             position_eci=self._x[0:3].copy(),
             velocity_eci=self._x[3:6].copy(),
-            quaternion=self._quaternion.copy(),
+            quaternion=self._quat.copy(),
             angular_velocity_body=self._angular_velocity_body.copy(),
             mass_kg=self._mass_kg,
             time_s=self._time_s,

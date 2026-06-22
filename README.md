@@ -21,7 +21,7 @@ A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch v
 - **Stage separation state machine** with safety interlocks
 - **Three-phase guidance**: vertical rise, programmed gravity turn, PEG terminal guidance
 - **PID attitude controller** producing TVC gimbal commands
-- **12-state Extended Kalman Filter** (position, velocity, accel bias, gyro bias)
+- **15-error-state multiplicative EKF** estimating attitude, position, velocity, accel bias, and gyro bias (GPS + barometer + star-tracker aided, error-state quaternion)
 - **Boundary enforcement** on all actuator commands and structural loads
 - **Flight Termination System** with autonomous abort criteria
 - **Structural dynamics**: flex-body bending modes (live in the control loop, stabilised by a frequency-scheduled structural notch filter) + propellant slosh (pendulum analogy)
@@ -142,8 +142,8 @@ sim/
 │   ├── guidance.py        # Three-phase ascent guidance
 │   ├── control.py         # PID attitude controller + TVC
 │   ├── notch_filter.py    # Frequency-scheduled structural notch (flex coupling)
-│   ├── sensors.py         # IMU/GPS/Baro sensor models
-│   └── navigation.py      # Extended Kalman Filter
+│   ├── sensors.py         # IMU/GPS/Baro/star-tracker sensor models
+│   └── navigation.py      # 15-error-state EKF (attitude + pos/vel + IMU biases)
 ├── safety/
 │   ├── boundary_enforcer.py # Command validation + clamping
 │   ├── fts.py             # Flight Termination System

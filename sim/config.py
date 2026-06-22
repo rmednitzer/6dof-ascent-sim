@@ -10,6 +10,7 @@ ADR 0018). Read them the usual way, ``config.<NAME>``; set them for a run with
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -104,8 +105,30 @@ IMU_ACCEL_NOISE_MPS2 = 0.01  # Accelerometer noise (m/s²)
 IMU_GYRO_NOISE_RADS = 0.001  # Gyro noise (rad/s)
 GPS_VEL_NOISE_MS = 0.1  # GPS velocity noise (m/s)
 GPS_UPDATE_HZ = 1  # GPS update rate
+# GPS availability ceiling (ADR 0020). Models the COCOM export limit (a
+# simplified altitude gate ~ the 18 km / 515 m/s COTS-receiver restriction):
+# GPS is denied above this altitude, so the upper stage flies the long coast/burn
+# to orbit GPS-denied. Attitude observability through that GPS-denied phase is
+# provided instead by the star tracker (below) — the realistic upper-stage
+# avionics suite. Set to +inf to model an ITAR-cleared (SAASM / M-code) receiver
+# with GPS through ascent.
+GPS_AVAILABILITY_CEILING_M = 60_000.0  # COCOM altitude limit
 BARO_ALT_NOISE_M = 10.0  # Barometer noise (m)
 BARO_UPDATE_HZ = 10  # Barometer update rate
+# ---------- Star tracker (inertial attitude reference) ----------
+# A star tracker images star fields to measure inertial attitude directly
+# (all three axes, including roll about the thrust axis, which GPS cannot
+# observe). It is the attitude aid that keeps the error-state EKF (ADR 0020)
+# observable during the GPS-denied upper-stage flight: without it, gyro-only
+# attitude dead-reckoning diverges (>20°) and the attitude→velocity→position
+# covariance coupling trips the FTS limit. Usable only above the sensible
+# atmosphere (clear sky) and below a slew rate that would smear the star image —
+# i.e. the upper-stage regime, complementary to GPS below the COCOM ceiling.
+STAR_TRACKER_NOISE_ARCSEC = 10.0  # 1-sigma per-axis attitude noise (arcsec)
+STAR_TRACKER_NOISE_RAD = STAR_TRACKER_NOISE_ARCSEC * math.pi / (180.0 * 3600.0)
+STAR_TRACKER_UPDATE_HZ = 5  # update rate (Hz)
+STAR_TRACKER_MIN_ALT_M = 100_000.0  # usable only above the sensible atmosphere
+STAR_TRACKER_MAX_RATE_RADS = 0.05  # ~2.9 deg/s slew limit (image-smear threshold)
 # Innovation-consistency gate. A measurement is rejected when its normalised
 # innovation squared (NIS = yᵀ S⁻¹ y, a chi-square statistic with one DOF per
 # measurement component) exceeds the chi-square quantile at this tail
@@ -115,6 +138,13 @@ BARO_UPDATE_HZ = 10  # Barometer update rate
 # reproduces the old 3-sigma intent exactly: 0.9973 = P(|N(0,1)| < 3), so
 # chi2.ppf(0.9973, 1) = 3.0² = 9.0 (the previous per-component gate on baro).
 EKF_INNOVATION_GATE_P = 0.9973  # chi-square tail probability for the NIS gate
+# Navigation attitude authority (ADR 0020). The error-state EKF always estimates
+# attitude (from the measured gyro, the GPS specific-force/velocity coupling, and
+# the star-tracker attitude update). When True, guidance, the attitude
+# controller, and the FTS consume that *estimated* attitude (full realism); when
+# False, they use the true attitude while the estimate still runs in parallel for
+# validation/telemetry. Stage 1 ships False; Stage 2 enables it.
+USE_ESTIMATED_ATTITUDE = False
 
 # ---------- FTS abort criteria ----------
 FTS_CROSSRANGE_LIMIT_M = 200_000  # Max cross-range deviation

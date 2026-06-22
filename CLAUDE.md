@@ -30,7 +30,7 @@ ruff format .                  # Auto-format
 - `sim/environment/` — Atmosphere, gravity (WGS84+J2), wind models
 - `sim/vehicle/` — Propulsion, aerodynamics, staging state machine
 - `sim/dynamics/` — Flex body bending modes, propellant slosh
-- `sim/gnc/` — Guidance (3-phase), PID control + TVC, 12-state EKF, sensors
+- `sim/gnc/` — Guidance (3-phase), PID control + TVC, 15-error-state EKF, sensors
 - `sim/safety/` — Boundary enforcement, FTS abort, health monitoring
 - `sim/telemetry/` — Recording schemas, dual-rate recorder
 - `sim/orbital/` — Orbit propagation, maneuvers, decay analysis
