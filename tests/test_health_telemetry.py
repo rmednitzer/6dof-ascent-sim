@@ -106,3 +106,75 @@ class TestRecorderSurfacesHealth:
             sim_context={},
         )
         assert rec.internal_frames[-1].health_status == HEALTH_NOMINAL
+
+
+class TestEngineHealthChannel:
+    """Q-03: engine_health is live once commanded/actual thrust is fed."""
+
+    def test_nominal_on_target(self):
+        hm = HealthMonitor()
+        hm.update(_nominal_cov(), 0.0, 100.0, 100.0, commanded_thrust_n=1.0e6, actual_thrust_n=1.0e6)
+        assert hm.status == HEALTH_NOMINAL
+
+    def test_warning_on_small_thrust_deviation(self):
+        hm = HealthMonitor()  # 7% low -> between WARN (5%) and ALERT (10%)
+        hm.update(_nominal_cov(), 0.0, 100.0, 100.0, commanded_thrust_n=1.0e6, actual_thrust_n=0.93e6)
+        assert hm.status == HEALTH_WARNING
+
+    def test_critical_on_large_thrust_deviation(self):
+        hm = HealthMonitor()  # 30% low -> CRITICAL (>20%)
+        hm.update(_nominal_cov(), 0.0, 100.0, 100.0, commanded_thrust_n=1.0e6, actual_thrust_n=0.7e6)
+        assert hm.status == HEALTH_CRITICAL
+
+    def test_nominal_when_engine_off(self):
+        hm = HealthMonitor()  # commanded 0 (off / ramp / coast) -> nothing to compare
+        hm.update(_nominal_cov(), 0.0, 100.0, 100.0, commanded_thrust_n=0.0, actual_thrust_n=0.0)
+        assert hm.status == HEALTH_NOMINAL
+
+
+class TestSensorHealthChannel:
+    """Q-03: sensor_status is live once degradation flags are fed."""
+
+    def test_warning_on_one_degraded(self):
+        hm = HealthMonitor()
+        hm.update(_nominal_cov(), 0.0, 100.0, 100.0, sensor_degradation_flags={"gps": True, "baro": False})
+        assert hm.status == HEALTH_WARNING
+
+
+class TestSensorDropoutDetection:
+    """Q-03: degraded() flags genuine in-envelope dropouts, not expected loss."""
+
+    @staticmethod
+    def _state_at(alt_m: float, t: float) -> VehicleState:
+        return VehicleState(
+            position_eci=np.array([config.EARTH_RADIUS_M + alt_m, 0.0, 0.0]),
+            velocity_eci=np.zeros(3),
+            quaternion=np.array([0.0, 0.0, 0.0, 1.0]),
+            angular_velocity_body=np.zeros(3),
+            mass_kg=100_000.0,
+            time_s=t,
+        )
+
+    def test_gps_dropout_in_envelope(self):
+        from sim.gnc.sensors import GPS
+
+        g = GPS(rng=np.random.default_rng(0))
+        g.measure(self._state_at(10_000.0, 0.0), 0.01)  # fix at t=0 (below the ceiling)
+        assert g.degraded(self._state_at(10_000.0, 1.0)) is False  # fresh
+        assert g.degraded(self._state_at(10_000.0, 5.0)) is True  # 5 s stale -> dropout
+
+    def test_gps_loss_above_ceiling_not_degraded(self):
+        from sim.gnc.sensors import GPS
+
+        g = GPS(rng=np.random.default_rng(0))
+        g.measure(self._state_at(10_000.0, 0.0), 0.01)
+        # Above the COCOM ceiling the loss of fix is expected, not a fault.
+        assert g.degraded(self._state_at(100_000.0, 50.0)) is False
+
+    def test_baro_dropout_in_envelope(self):
+        from sim.gnc.sensors import Barometer
+
+        b = Barometer(rng=np.random.default_rng(0))
+        b.measure(self._state_at(10_000.0, 0.0), 0.01)
+        assert b.degraded(self._state_at(10_000.0, 3.0)) is True  # >1 s stale below 40 km
+        assert b.degraded(self._state_at(50_000.0, 3.0)) is False  # above 40 km -> expected

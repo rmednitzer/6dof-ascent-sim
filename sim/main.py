@@ -321,16 +321,19 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
         # the mass burned would be a spurious delta-v boost on the
         # depletion tick (and could shift stage-end insertion outcomes).
         propellant_avail = vehicle.propellant_remaining()
+        propellant_limited = False  # engine couldn't deliver the full step demand
         if mdot > 0.0:
             if propellant_avail <= 0.0:
                 thrust_n = 0.0
                 mdot = 0.0
+                propellant_limited = True
             else:
                 step_demand = mdot * dt
                 if step_demand > propellant_avail:
                     burn_frac = propellant_avail / step_demand
                     thrust_n *= burn_frac
                     mdot *= burn_frac
+                    propellant_limited = True
 
         # --- Control (gain-scheduled) ---
         # When the flex model is live, the controller's rate feedback is the
@@ -447,11 +450,21 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
             controller.reset()
 
         # --- Health monitoring ---
+        # Engine health compares actual thrust to the throttle-commanded thrust,
+        # but only while the engine is steadily firing — ignition/tail-off ramps,
+        # the propellant-depletion step (engine delivers a partial, burn-fraction
+        # thrust), and the inter-stage coast (engine off) would otherwise read as
+        # a deviation. Sensor health flags genuine in-envelope dropouts (Q-03).
+        engine_steady = current_engine.is_ignited and not current_engine.in_thrust_transient and not propellant_limited
+        commanded_thrust_n = approved_throttle * full_thrust if engine_steady else 0.0
         health_monitor.update(
             ekf_pos_covariance=ekf.covariance[0:3, 0:3],
             dynamic_pressure_pa=q_pa,
             propellant_remaining_kg=vehicle.propellant_remaining(),
             propellant_initial_kg=vehicle.current_stage.propellant,
+            sensor_degradation_flags=sensors.degradation_flags(true_state),
+            commanded_thrust_n=commanded_thrust_n,
+            actual_thrust_n=thrust_n,
         )
 
         # --- Flex body (live control-structure interaction, AD-04) ---

@@ -187,6 +187,8 @@ class GPS:
         rng: NumPy random generator.
     """
 
+    STALE_GRACE_S: float = 3.0  # dropout grace (~3× the 1 Hz update period)
+
     def __init__(self, rng: np.random.Generator | None = None) -> None:
         # Use a cryptographically secure seed if no generator is provided
         self._rng = rng if rng is not None else np.random.default_rng(secrets.randbits(128))
@@ -230,6 +232,16 @@ class GPS:
         elapsed = time_s - self._last_update_time_s
         return elapsed >= self._update_period_s - 1e-9
 
+    def degraded(self, true_state: VehicleState) -> bool:
+        """True if a fix is *expected* (below the ceiling) but none has arrived
+        within the staleness grace — a real dropout (Q-03). The expected loss of
+        fix above the COCOM ceiling is not a fault and is not flagged."""
+        if true_state.altitude_m() > config.GPS_AVAILABILITY_CEILING_M:
+            return False  # out of envelope — expected, not degraded
+        if self._last_update_time_s < 0.0:
+            return False  # no fix yet at startup
+        return (true_state.time_s - self._last_update_time_s) > self.STALE_GRACE_S
+
 
 class Barometer:
     """Barometric altimeter model.
@@ -242,6 +254,7 @@ class Barometer:
     """
 
     MAX_USEFUL_ALT_M: float = 40_000.0
+    STALE_GRACE_S: float = 1.0  # dropout grace (~10× the 10 Hz update period)
 
     def __init__(self, rng: np.random.Generator | None = None) -> None:
         # Use a cryptographically secure seed if no generator is provided
@@ -282,6 +295,16 @@ class Barometer:
             return True
         elapsed = time_s - self._last_update_time_s
         return elapsed >= self._update_period_s - 1e-9
+
+    def degraded(self, true_state: VehicleState) -> bool:
+        """True if a reading is *expected* (below MAX_USEFUL_ALT_M) but none has
+        arrived within the staleness grace — a real dropout (Q-03). The expected
+        loss of signal at high altitude is not a fault and is not flagged."""
+        if true_state.altitude_m() > self.MAX_USEFUL_ALT_M:
+            return False  # out of envelope — expected, not degraded
+        if self._last_update_time_s < 0.0:
+            return False
+        return (true_state.time_s - self._last_update_time_s) > self.STALE_GRACE_S
 
 
 class StarTracker:
@@ -465,3 +488,17 @@ class SensorSuite:
         star_meas = self.star_tracker.measure(true_state, dt)
         ground_meas = [m for st in self.ground_stations if (m := st.measure(true_state, dt)) is not None]
         return imu_meas, gps_meas, baro_meas, star_meas, ground_meas
+
+    def degradation_flags(self, true_state: VehicleState) -> dict[str, bool]:
+        """Per-sensor degradation flags for the health monitor (Q-03).
+
+        A sensor is *degraded* only when it is within its operating envelope yet
+        has gone stale (a real dropout) — expected loss of aiding outside the
+        envelope (GPS above the COCOM ceiling, baro at high altitude) is not
+        flagged. Call after :meth:`update`. Covers the position aids with simple
+        altitude envelopes; star-tracker / ground-network health is future work.
+        """
+        return {
+            "gps": self.gps.degraded(true_state),
+            "baro": self.baro.degraded(true_state),
+        }
