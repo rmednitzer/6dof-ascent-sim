@@ -56,7 +56,7 @@
   - **Propellant slosh** (`sim/dynamics/slosh.py`): Single-tank pendulum analogy. 30% of remaining propellant participates in slosh (`SLOSH_MASS_FRACTION`). Frequency interpolates with fill level. Damping ratio 0.03 (baffled tank). Semi-implicit Euler integration.
   - **TVC actuator** (`sim/vehicle/actuator.py`): second-order servo (25 Hz bandwidth, ζ=0.7) integrated on adaptive sub-steps so the response stays numerically stable at the 100 Hz outer rate (a single semi-implicit Euler step was divergent and limit-cycled; audit AD-02).
 - **No structural flexibility coupling** between flex modes and slosh.
-- **Instantaneous stage separation** (mass drop). Coast duration is 1.0 s between tail-off and separation.
+- **Instantaneous stage separation** (mass drop), cold-staged (ADR 0025): ~2 s before separation (1 s tail-off + 1 s coast) lets S1 thrust decay, then a **3 s post-separation ullage-settling coast** (`POST_SEP_COAST_DURATION`) lets the spent stage clear and the upper-stage propellant settle before S2 ignition — S2 is not lit at the instant of separation. A 5%-thrust interlock gates separation. (Settling/recontact physics are not modelled; the coast is a timeline gap, so its only modelled effect is gravity loss.)
 - **RK4 force hold** (`sim/main.py`): the translational forces, torques and gravity are evaluated once per 100 Hz step and held constant across the four RK4 sub-stages (only the kinematic states vary per sub-stage). Net dynamics accuracy is therefore effectively first-order within a step; the 100 Hz rate keeps the per-step error small for this trajectory but the "RK4" label refers to the kinematic integration, not the force model.
 
 ## Navigation

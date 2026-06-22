@@ -244,6 +244,49 @@ class TestStagingAbortRecovery:
 
 
 # --------------------------------------------------------------------------- #
+# ADR 0025 — post-separation ullage-settling coast (cold staging)
+# --------------------------------------------------------------------------- #
+class TestPostSeparationCoast:
+    """S2 is not lit at the instant of separation: the vehicle coasts
+    ~POST_SEP_COAST_DURATION (ullage settling / stage clearance) first."""
+
+    @staticmethod
+    def _seq_at_separation():
+        from sim.vehicle.propulsion import EngineModel
+        from sim.vehicle.staging import StagingPhase, StagingSequencer
+        from sim.vehicle.vehicle import Vehicle
+
+        veh = Vehicle()
+        s1 = EngineModel(veh.current_stage)  # never ignited → thrust below interlock
+        s2 = EngineModel(veh.stages[1])
+        seq = StagingSequencer(veh, s1, s2)
+        seq._phase = StagingPhase.SEPARATION
+        return seq, s2
+
+    def test_s2_not_ignited_at_separation(self):
+        from sim.vehicle.staging import StagingPhase
+
+        seq, s2 = self._seq_at_separation()
+        seq.update(0.01)  # process SEPARATION
+        assert seq.phase is StagingPhase.SETTLING
+        assert not s2.is_ignited  # cold staging — ignition deferred
+
+    def test_s2_ignites_only_after_settling_coast(self):
+        import sim.vehicle.staging as st
+        from sim.vehicle.staging import StagingPhase
+
+        seq, s2 = self._seq_at_separation()
+        seq.update(0.01)  # -> SETTLING
+        for _ in range(int(0.5 * st.POST_SEP_COAST_DURATION / 0.01)):
+            seq.update(0.01)
+        assert not s2.is_ignited  # still settling, halfway through the coast
+        for _ in range(int(st.POST_SEP_COAST_DURATION / 0.01) + 2):
+            seq.update(0.01)
+        assert s2.is_ignited
+        assert seq.phase in (StagingPhase.S2_IGNITION, StagingPhase.COMPLETE)
+
+
+# --------------------------------------------------------------------------- #
 # AD-13 — cop_com_margin sign convention
 # --------------------------------------------------------------------------- #
 class TestCopComMargin:

@@ -41,3 +41,4 @@ changes from the 2026-06-21 cross-repo lessons pass (`audit/05`).
 | [0022](0022-realistic-imu-dispersion.md) | Realistic IMU bias-instability dispersion (N-01) | accepted |
 | [0023](0023-ground-station-range-tracking.md) | Ground-station range tracking for the GPS-denied coast (N-01) | accepted |
 | [0024](0024-inclination-targeting.md) | Inclination targeting — azimuth correction + yaw plane-steering (AD-17) | accepted |
+| [0025](0025-post-separation-coast.md) | Post-separation ullage-settling coast (cold staging) | accepted |
