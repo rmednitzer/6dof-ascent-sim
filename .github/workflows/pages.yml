@@ -1,7 +1,8 @@
 name: Deploy site to GitHub Pages
 
-# Publishes the static landing page in `site/` (plus the example dashboard /
-# ground-track images) to a `gh-pages` branch and points GitHub Pages at it.
+# Publishes the static site in `site/` -- the landing page plus the interactive
+# example-run telemetry in `site/data/` (and the dashboard / ground-track images
+# as no-JS fallbacks) -- to a `gh-pages` branch and points GitHub Pages at it.
 #
 # This uses a plain git push + the Pages REST API rather than the official
 # `actions/*-pages` actions so the only third-party action is `actions/checkout`,
@@ -34,7 +35,9 @@ jobs:
       - name: Assemble static site
         run: |
           rm -rf _site && mkdir -p _site
-          cp site/index.html _site/index.html
+          # Whole site/ tree: index.html + data/telemetry.json (interactive viz).
+          cp -r site/. _site/
+          # Static dashboard / ground-track images, used as no-JS fallbacks.
           cp examples/output/dashboard.png examples/output/ground_track.png _site/
           touch _site/.nojekyll
 
