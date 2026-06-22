@@ -44,8 +44,15 @@ DEFAULT_DISPERSIONS = [
     # (like GPS_POS_NOISE_M below) rather than plain Gaussian — an unbounded
     # Gaussian here sampled negative ~31% of the time, crashing ~half of all
     # Monte Carlo runs with "scale < 0" (finding AD-18).
-    Dispersion("IMU_ACCEL_BIAS_MPS2", "truncated_gaussian", sigma=0.002, bounds=(0.0001, 0.007)),
-    Dispersion("IMU_GYRO_BIAS_RADS", "truncated_gaussian", sigma=0.0002, bounds=(0.00001, 0.0007)),
+    #
+    # The 1-sigma spread is ~30% of nominal — unit-to-unit / thermal variation
+    # within one IMU grade — truncated to ~2x nominal at the tail. The earlier
+    # sigma was 2x the *nominal value* (so ~7x-nominal draws were in bounds); that
+    # implausibly wide spread, not the navigation filter, dominated the dispersed
+    # FTS abort rate (BACKLOG N-01): a bad-IMU draw inflated the GPS-denied-coast
+    # position covariance past the 10 km FTS limit. ADR 0022.
+    Dispersion("IMU_ACCEL_BIAS_MPS2", "truncated_gaussian", sigma=0.0003, bounds=(0.0001, 0.002)),
+    Dispersion("IMU_GYRO_BIAS_RADS", "truncated_gaussian", sigma=0.00003, bounds=(0.00001, 0.0002)),
     Dispersion("GPS_POS_NOISE_M", "truncated_gaussian", sigma=2.0, bounds=(1, 15)),
     # Mass
     Dispersion("S1_DRY_MASS_KG", "gaussian", sigma=222, bounds=None),
