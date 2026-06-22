@@ -130,6 +130,37 @@ def _orbit_elements(r_m: list[float], v_ms: list[float]) -> dict:
     }
 
 
+def _projected_orbit(r_m: list[float], v_ms: list[float], n_points: int = 220) -> dict:
+    """Forward-propagate the achieved orbit one revolution and return ECI km.
+
+    Reuses the post-insertion :class:`OrbitPropagator` (J2-perturbed RK4) so the
+    site can draw the *projected* trajectory the vehicle coasts onto after
+    insertion. The path starts at the insertion state, so it joins the ascent
+    arc seamlessly, and spans one orbital period (a near-closed loop).
+    """
+    from sim.core.state import VehicleState
+    from sim.orbital.propagator import OrbitPropagator
+
+    state = VehicleState(
+        position_eci=np.asarray(r_m, dtype=float),
+        velocity_eci=np.asarray(v_ms, dtype=float),
+        quaternion=np.array([0.0, 0.0, 0.0, 1.0]),
+        angular_velocity_body=np.zeros(3),
+        mass_kg=1000.0,
+        time_s=0.0,
+    )
+    prop = OrbitPropagator(state)
+    period_s = prop.state_to_elements().period_s
+    if not math.isfinite(period_s) or period_s <= 0.0:
+        return {"x_km": [], "y_km": [], "z_km": []}
+    states = prop.propagate(duration_s=period_s, dt_s=period_s / n_points)
+    return {
+        "x_km": [round(float(s.position_eci[0]) / 1000.0, 1) for s in states],
+        "y_km": [round(float(s.position_eci[1]) / 1000.0, 1) for s in states],
+        "z_km": [round(float(s.position_eci[2]) / 1000.0, 1) for s in states],
+    }
+
+
 def build_bundle(frames: list[dict], summary: dict, target: int = TARGET_POINTS) -> dict:
     """Assemble the compact, columnar telemetry bundle for the web page."""
     sampled = _decimate(frames, target)
@@ -205,7 +236,9 @@ def build_bundle(frames: list[dict], summary: dict, target: int = TARGET_POINTS)
         "health_legend": {v: k for k, v in _HEALTH_CODE.items()},
     }
 
-    return {"meta": meta, "series": series}
+    projected = _projected_orbit(summary["final_position_eci_m"], summary["final_velocity_eci_ms"])
+
+    return {"meta": meta, "series": series, "projected": projected}
 
 
 def main() -> None:
