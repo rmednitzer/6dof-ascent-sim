@@ -2,25 +2,25 @@
 ==================================================
 Outcome:               SUCCESS
 Flight time:           487.9 s
-Final altitude:        407.6 km
-Final velocity:        7603.3 m/s
-Final mass:            26714 kg
+Final altitude:        407.3 km
+Final velocity:        7603.5 m/s
+Final mass:            26734 kg
 Final stage:           2
 
 Peak Values
 --------------------------------------------------
-Peak altitude:         407.6 km
-Peak velocity:         7603.3 m/s
-Peak dynamic pressure: 32449 Pa (92.7% of limit)
+Peak altitude:         407.3 km
+Peak velocity:         7603.5 m/s
+Peak dynamic pressure: 32444 Pa (92.7% of limit)
 Peak axial G:          5.40 g (90.0% of limit)
-Peak lateral G:        0.111 g
+Peak lateral G:        0.113 g
 Peak Mach:             11.6
 
 Safety
 --------------------------------------------------
-Boundary violations:   251
+Boundary violations:   326
 FTS triggered:         False
 Health status:         WARNING
 
-Telemetry frames:      48794 (internal), 4880 (downlink)
-Telemetry hash:        1bf9275930e2b8637b23b7c5fede4ce2ce9cbce55b44ff229331f923da92f3a3
+Telemetry frames:      48785 (internal), 4879 (downlink)
+Telemetry hash:        eb3e129cc9629d01e3c0427266877804a4dfebeb674d735f032332a3e4491861

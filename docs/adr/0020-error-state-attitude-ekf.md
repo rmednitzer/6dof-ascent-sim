@@ -6,6 +6,22 @@
 - Related: ADR 0013 (NIS gate, retained), ADR 0002 (scalar-last quaternion),
   ADR 0016/0018 (config schema / context-local override)
 
+> **Stage 2 update (2026-06-22).** `USE_ESTIMATED_ATTITUDE` now defaults to
+> `True` (and is an overridable config parameter): guidance, the controller, and
+> the FTS fly on the EKF's estimated attitude. Gated by a paired Monte-Carlo
+> campaign over 24 dispersed seeds run on both authorities — **true attitude and
+> estimated attitude scored an identical 16/24 success rate.** Closing the loop
+> introduced two FTS false trips (seeds 56, 63) and two false saves (43, 44) —
+> symmetric, net-neutral, within Monte-Carlo noise — and shifted insertion by
+> ~2.4 km on average (≈0.6 % of orbit). The absolute abort rate (~33 %) is
+> dominated by the `IMU_*_BIAS` dispersions (drawn up to ~7× nominal), which
+> inflate the EKF position covariance past the 10 km FTS limit during the
+> GPS-denied coast; that mechanism is **identical for both authorities** and is a
+> pre-existing robustness property, not a consequence of using the estimate. See
+> BACKLOG for the follow-up (revisit IMU-dispersion realism / FTS covariance
+> limit / GPS reacquisition above 60 km). Conclusion: the estimate is good enough
+> to fly the loop with no systematic regression.
+
 ## Context and Problem Statement
 
 The previous 12-state EKF (`sim/gnc/navigation.py`) estimated

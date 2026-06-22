@@ -59,6 +59,13 @@ class OverridableParams(BaseModel):
     FLEX_MODAL_MASS_KG: float = Field(default=1_000_000.0, gt=0.0, le=1e9, description="Generalised modal mass (kg)")
     SLOSH_ENABLED: bool = Field(default=True, description="Enable the propellant-slosh model")
 
+    # --- Navigation / GNC (ADR 0020) ---
+    # When True (Stage 2 default), guidance, the attitude controller, and the FTS
+    # consume the error-state EKF's *estimated* attitude; when False they use the
+    # true attitude while the estimator still runs in parallel for validation.
+    # Overridable so a Monte-Carlo / regression run can compare both authorities.
+    USE_ESTIMATED_ATTITUDE: bool = Field(default=True, description="Close the loop on the EKF's estimated attitude")
+
 
 # The single declaration of the overridable parameter set. Consumed by
 # sim.config (context-local resolution) and the Monte-Carlo dispatcher.

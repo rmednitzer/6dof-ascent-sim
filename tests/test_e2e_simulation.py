@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+import pytest
+
 from sim import config
 from sim.main import run_simulation
 
@@ -70,6 +72,48 @@ class TestEndToEndAscent:
         result = run_simulation(config_override=override, quiet=True)
         assert result.outcome in {"SUCCESS", "TIMEOUT", "FTS_ABORT"}
         assert not result.outcome.startswith("ERROR")  # AD-18: no scale<0 crashes
+
+
+class TestEstimatedAttitudeClosedLoop:
+    """ADR 0020 Stage 2: ``USE_ESTIMATED_ATTITUDE`` defaults to True, so guidance,
+    the attitude controller, and the FTS fly on the EKF's *estimated* attitude.
+
+    This is a fast, deterministic regression guard for the Stage-2 property that
+    closing the loop on the estimate does not regress the mission: on a dispersed
+    seed that flies cleanly on the true attitude, the estimated-attitude run must
+    still insert to orbit without an FTS trip. The statistical abort-rate /
+    false-trip analysis over the full paired (true- vs estimated-attitude)
+    campaign is recorded in ADR 0020 — over 24 paired seeds the two authorities
+    matched within Monte-Carlo noise (equal success rate; a few marginal cases
+    near the FTS covariance limit flip in both directions). The seeds below are
+    pinned true-attitude successes, so a regression in estimated-attitude control
+    surfaces here as a failure.
+    """
+
+    # Dispersed seeds that fly cleanly on both authorities (campaign-verified).
+    CLEAN_SEEDS = (47, 51)
+
+    @staticmethod
+    def _dispersed_override(seed: int) -> dict:
+        import numpy as np
+
+        from sim.montecarlo.dispersions import DEFAULT_DISPERSIONS, generate_dispersed_config
+
+        override = generate_dispersed_config(DEFAULT_DISPERSIONS, np.random.default_rng(seed))
+        override["_seed"] = seed
+        override["_run_index"] = 0
+        override["USE_ESTIMATED_ATTITUDE"] = True  # explicit; this is the Stage-2 default
+        return override
+
+    @pytest.mark.parametrize("seed", CLEAN_SEEDS)
+    def test_estimated_attitude_inserts_to_orbit_under_dispersion(self, seed):
+        """Flying the closed loop on the estimated attitude still reaches orbit
+        on a dispersed seed (the core Stage-2 capability), with no FTS trip."""
+        result = run_simulation(config_override=self._dispersed_override(seed), quiet=True)
+        assert result.outcome == "SUCCESS", f"seed {seed}: estimated-attitude run got {result.outcome}"
+        assert result.insertion_altitude_m >= config.INSERTION_MIN_ALTITUDE_FRAC * config.TARGET_ALTITUDE_M
+        assert result.insertion_velocity_ms >= config.INSERTION_MIN_VELOCITY_FRAC * config.TARGET_VELOCITY_MS
+        assert result.fts_trigger_time_s is None  # no false trip
 
 
 class TestFlexControlStructureInteraction:

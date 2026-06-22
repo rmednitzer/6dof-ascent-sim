@@ -138,13 +138,12 @@ STAR_TRACKER_MAX_RATE_RADS = 0.05  # ~2.9 deg/s slew limit (image-smear threshol
 # reproduces the old 3-sigma intent exactly: 0.9973 = P(|N(0,1)| < 3), so
 # chi2.ppf(0.9973, 1) = 3.0² = 9.0 (the previous per-component gate on baro).
 EKF_INNOVATION_GATE_P = 0.9973  # chi-square tail probability for the NIS gate
-# Navigation attitude authority (ADR 0020). The error-state EKF always estimates
-# attitude (from the measured gyro, the GPS specific-force/velocity coupling, and
-# the star-tracker attitude update). When True, guidance, the attitude
-# controller, and the FTS consume that *estimated* attitude (full realism); when
-# False, they use the true attitude while the estimate still runs in parallel for
-# validation/telemetry. Stage 1 ships False; Stage 2 enables it.
-USE_ESTIMATED_ATTITUDE = False
+# Navigation attitude authority (ADR 0020) is overridable (see config_schema):
+# USE_ESTIMATED_ATTITUDE. The error-state EKF always estimates attitude (from the
+# measured gyro, the GPS specific-force/velocity coupling, and the star-tracker
+# update); the flag selects whether guidance/control/FTS consume that *estimated*
+# attitude (default, full realism) or the true attitude (estimate still runs in
+# parallel for validation/telemetry). Stage 2 enabled it by default.
 
 # ---------- FTS abort criteria ----------
 FTS_CROSSRANGE_LIMIT_M = 200_000  # Max cross-range deviation
