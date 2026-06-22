@@ -49,20 +49,24 @@ class TestNominalGolden:
     2026-06-22 for ADR 0021 (S2 Isp 348->356 s, N-01 performance margin): the
     higher-Isp upper stage barely moves the nominal (insertion, peak-q, axial-g,
     and EKF uncertainty essentially unchanged; ``total_time_s`` 487.9->491.8 as
-    the more-efficient burn shifts cutoff slightly).
+    the more-efficient burn shifts cutoff slightly). Re-baselined again 2026-06-22
+    for ADR 0023 (ground-station range tracking, N-01): continuous position aiding
+    through the coast drops ``peak_ekf_uncertainty_m`` 1707->521 m and, via the
+    sharper position estimate fed to guidance, flies a slightly more circular
+    insertion (fpa 0.80->0.32 deg, peak-q -2%).
     """
 
     # Golden summary of the deterministic nominal run (seed 0).
     _GOLD = {
         "outcome": "SUCCESS",
-        "insertion_altitude_m": 407_265.4,
-        "insertion_velocity_ms": 7_602.4,
-        "insertion_fpa_deg": 0.800,
-        "peak_q_pa": 32_443.6,
+        "insertion_altitude_m": 407_608.5,
+        "insertion_velocity_ms": 7_594.9,
+        "insertion_fpa_deg": 0.322,
+        "peak_q_pa": 31_714.5,
         "peak_axial_g": 5.40,
-        "peak_ekf_uncertainty_m": 1_707.4,
-        "boundary_clamp_count": 324,
-        "total_time_s": 491.8,
+        "peak_ekf_uncertainty_m": 521.1,
+        "boundary_clamp_count": 307,
+        "total_time_s": 493.1,
     }
 
     def test_nominal_summary_matches_golden(self):

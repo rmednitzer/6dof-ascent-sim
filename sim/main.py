@@ -375,7 +375,7 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
 
         # --- Sensor measurements ---
         # IMU senses specific force (non-gravitational accel), not gravity.
-        imu_meas, gps_meas, baro_meas, star_meas = sensors.update(true_state, prev_specific_force_eci, dt)
+        imu_meas, gps_meas, baro_meas, star_meas, ground_meas = sensors.update(true_state, prev_specific_force_eci, dt)
 
         # --- Navigation (EKF) ---
         # The error-state EKF estimates attitude itself, propagating the nominal
@@ -401,6 +401,12 @@ def _run_inner(quiet: bool, write_output: bool, run_index: int, dispersed_params
         # trip the FTS limit.
         if star_meas is not None:
             ekf.update_star_tracker(star_meas)
+        # Ground-station ranging is independent of GPS (the vehicle is tracked, not
+        # self-locating), so it keeps bounding EKF *position* covariance through the
+        # COCOM GPS-denied coast — where it would otherwise grow unbounded and, for
+        # the most-lofted dispersions, trip the FTS covariance limit (ADR 0023).
+        for ground_range in ground_meas:
+            ekf.update_ground_range(ground_range)
 
         ekf_uncertainty = ekf.position_uncertainty_m()
         peak_ekf_uncertainty = max(peak_ekf_uncertainty, ekf_uncertainty)

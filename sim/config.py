@@ -129,6 +129,23 @@ STAR_TRACKER_NOISE_RAD = STAR_TRACKER_NOISE_ARCSEC * math.pi / (180.0 * 3600.0)
 STAR_TRACKER_UPDATE_HZ = 5  # update rate (Hz)
 STAR_TRACKER_MIN_ALT_M = 100_000.0  # usable only above the sensible atmosphere
 STAR_TRACKER_MAX_RATE_RADS = 0.05  # ~2.9 deg/s slew limit (image-smear threshold)
+# ---------- Ground-station range tracking (ADR 0023) ----------
+# A launch-range tracking network ranges the vehicle as a transponder/skin-track
+# target. It is independent of GPS (the vehicle is *tracked*, not self-locating),
+# so unlike the COTS GPS receiver it is NOT bound by the COCOM ceiling and keeps
+# aiding the EKF position through the GPS-denied upper-stage coast — bounding the
+# position covariance that otherwise grows unbounded and (for the most-lofted
+# dispersions) trips the FTS (BACKLOG N-01). Each station contributes a slant-range
+# measurement while the vehicle is above its elevation mask; the combined
+# geometry multilaterates position. Range accuracy is coarser than GPS.
+GROUND_RANGE_NOISE_M = 30.0  # slant-range 1-sigma noise (m)
+GROUND_TRACK_UPDATE_HZ = 5  # ranging rate per station (Hz)
+GROUND_TRACK_ELEV_MASK_DEG = 5.0  # min elevation above the local horizon for a usable track
+# Eastern-Range stations along the north-east ascent track: (name, lat°, lon°, alt m).
+GROUND_STATIONS = [
+    ("KSC", LAUNCH_LAT_DEG, LAUNCH_LON_DEG, 0.0),
+    ("Bermuda", 32.36, -64.68, 0.0),
+]
 # Innovation-consistency gate. A measurement is rejected when its normalised
 # innovation squared (NIS = yᵀ S⁻¹ y, a chi-square statistic with one DOF per
 # measurement component) exceeds the chi-square quantile at this tail

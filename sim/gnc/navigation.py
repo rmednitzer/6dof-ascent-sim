@@ -45,7 +45,13 @@ from sim.core.reference_frames import (
     quaternion_multiply,
 )
 from sim.core.state import VehicleState
-from sim.gnc.sensors import BaroMeasurement, GPSMeasurement, IMUMeasurement, StarTrackerMeasurement
+from sim.gnc.sensors import (
+    BaroMeasurement,
+    GPSMeasurement,
+    GroundRangeMeasurement,
+    IMUMeasurement,
+    StarTrackerMeasurement,
+)
 
 # Error-state indices.
 _P_IDX, _V_IDX, _BA_IDX, _BG_IDX, _TH_IDX = 0, 3, 6, 9, 12
@@ -367,6 +373,28 @@ class NavigationEKF:
         H = np.zeros((3, N_ERR))
         H[0:3, _TH_IDX : _TH_IDX + 3] = np.eye(3)
         R = np.eye(3) * config.STAR_TRACKER_NOISE_RAD**2
+        self._apply_update(y, H, R)
+
+    def update_ground_range(self, ground: GroundRangeMeasurement) -> None:
+        """Fuse a slant-range measurement from one ground tracking station.
+
+        Range is a nonlinear function of position, ``ρ = |r − r_station|``, so the
+        measurement Jacobian is the line-of-sight unit vector on the position
+        error block: ``∂ρ/∂δp = (r̂ − r_station)/|r̂ − r_station|``. A single range
+        constrains only the line-of-sight component; the station network's
+        differing look-angles (and the line-of-sight sweep as the vehicle moves)
+        multilaterate the full position, bounding the covariance through the
+        GPS-denied coast (ADR 0023).
+        """
+        r_est = self._x[_P_IDX : _P_IDX + 3]
+        los = r_est - ground.station_position_eci
+        rng = math.sqrt(los[0] ** 2 + los[1] ** 2 + los[2] ** 2)
+        if rng < 1.0:
+            return
+        y = np.array([ground.range_m - rng])
+        H = np.zeros((1, N_ERR))
+        H[0, _P_IDX : _P_IDX + 3] = los / rng
+        R = np.array([[config.GROUND_RANGE_NOISE_M**2]])
         self._apply_update(y, H, R)
 
     # -- private helpers -----------------------------------------------------

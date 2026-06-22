@@ -22,7 +22,13 @@ import numpy.testing as npt
 from scipy.stats import chi2
 
 from sim import config
-from sim.core.reference_frames import quat_to_dcm, quaternion_from_axis_angle, quaternion_multiply
+from sim.core.reference_frames import (
+    ecef_to_eci,
+    lla_to_ecef,
+    quat_to_dcm,
+    quaternion_from_axis_angle,
+    quaternion_multiply,
+)
 from sim.core.state import VehicleState
 from sim.gnc.navigation import (
     N_ERR,
@@ -34,6 +40,8 @@ from sim.gnc.navigation import (
 from sim.gnc.sensors import (
     BaroMeasurement,
     GPSMeasurement,
+    GroundRangeMeasurement,
+    GroundStation,
     IMUMeasurement,
     StarTracker,
     StarTrackerMeasurement,
@@ -573,6 +581,65 @@ class TestStarTrackerSensor:
         # A 3-axis small rotation with per-axis sigma has geodesic RMS sqrt(3)*sigma.
         expected = math.sqrt(3.0) * config.STAR_TRACKER_NOISE_RAD
         npt.assert_allclose(rms, expected, rtol=0.15)
+
+
+class TestGroundRangeUpdate:
+    """The ground-station slant-range update bounds position (ADR 0023)."""
+
+    @staticmethod
+    def _ekf_with_position_uncertainty(var_m2=1.0e6):
+        state = _make_initial_state()
+        ekf = NavigationEKF(state)
+        ekf._P[0:3, 0:3] = np.eye(3) * var_m2
+        return ekf, state.position_eci.copy()
+
+    def test_update_reduces_position_covariance(self):
+        ekf, r = self._ekf_with_position_uncertainty()
+        station = r - np.array([1.0e6, 0.0, 0.0])  # 1000 km along -x
+        true_range = float(np.linalg.norm(r - station))
+        tr0 = float(np.trace(ekf.covariance[0:3, 0:3]))
+        ekf.update_ground_range(GroundRangeMeasurement(station, true_range, "T", 0.0))
+        assert float(np.trace(ekf.covariance[0:3, 0:3])) < tr0
+
+    def test_update_drives_range_to_measurement(self):
+        ekf, r = self._ekf_with_position_uncertainty()
+        station = r - np.array([1.0e6, 0.0, 0.0])
+        true_range = float(np.linalg.norm(r - station))
+        ekf._x[0] += 500.0  # perturb the estimate along the line of sight
+        err0 = abs(float(np.linalg.norm(ekf._x[0:3] - station)) - true_range)
+        for _ in range(10):
+            ekf.update_ground_range(GroundRangeMeasurement(station, true_range, "T", 0.0))
+        err1 = abs(float(np.linalg.norm(ekf._x[0:3] - station)) - true_range)
+        assert err1 < 0.1 * err0
+
+
+class TestGroundStationSensor:
+    """Ground-station visibility and ranging (ADR 0023)."""
+
+    @staticmethod
+    def _state_above_station(station_lla, alt_m, *, antipode=False):
+        s_ecef = lla_to_ecef(math.radians(station_lla[0]), math.radians(station_lla[1]), station_lla[2])
+        radial = s_ecef / np.linalg.norm(s_ecef)
+        veh_ecef = (-1.0 if antipode else 1.0) * (s_ecef + radial * alt_m)
+        return VehicleState(
+            position_eci=ecef_to_eci(veh_ecef, 0.0),
+            velocity_eci=np.zeros(3),
+            quaternion=np.array([0.0, 0.0, 0.0, 1.0]),
+            angular_velocity_body=np.zeros(3),
+            mass_kg=1000.0,
+            time_s=0.0,
+        )
+
+    def test_tracks_overhead_vehicle(self):
+        st = GroundStation("T", 0.0, 0.0, 0.0, rng=np.random.default_rng(0))
+        m = st.measure(self._state_above_station((0.0, 0.0, 0.0), 300_000.0), 0.01)
+        assert m is not None
+        assert abs(m.range_m - 300_000.0) < 250.0  # overhead slant ≈ altitude, within noise
+
+    def test_no_track_below_horizon(self):
+        st = GroundStation("T", 0.0, 0.0, 0.0, rng=np.random.default_rng(0))
+        # Vehicle above the antipode — well below the station's local horizon.
+        assert st.measure(self._state_above_station((0.0, 0.0, 0.0), 300_000.0, antipode=True), 0.01) is None
 
 
 class TestEKFSetters:

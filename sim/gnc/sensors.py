@@ -6,13 +6,21 @@ with realistic noise, bias, and availability constraints.
 
 from __future__ import annotations
 
+import math
 import secrets
 from dataclasses import dataclass
 
 import numpy as np
 
 from sim import config
-from sim.core.reference_frames import eci_to_body, quaternion_from_axis_angle, quaternion_multiply
+from sim.core.reference_frames import (
+    ecef_to_eci,
+    eci_to_body,
+    eci_to_ecef,
+    lla_to_ecef,
+    quaternion_from_axis_angle,
+    quaternion_multiply,
+)
 from sim.core.state import VehicleState
 
 # ---------------------------------------------------------------------------
@@ -74,6 +82,24 @@ class StarTrackerMeasurement:
     """
 
     quaternion: np.ndarray
+    time_s: float
+
+
+@dataclass
+class GroundRangeMeasurement:
+    """Slant-range reading from one ground tracking station.
+
+    Attributes:
+        station_position_eci: ECI position of the station at the measurement
+            epoch (m) — the filter recomputes the predicted range from this.
+        range_m: Measured slant range to the vehicle (m).
+        station_name: Station identifier (for telemetry/debug).
+        time_s: Timestamp of the measurement (s).
+    """
+
+    station_position_eci: np.ndarray
+    range_m: float
+    station_name: str
     time_s: float
 
 
@@ -319,6 +345,69 @@ class StarTracker:
         return elapsed >= self._update_period_s - 1e-9
 
 
+class GroundStation:
+    """Ground tracking station that ranges the vehicle (ADR 0023).
+
+    A launch-range radar / transponder that measures slant range to the vehicle
+    while it is above the station's elevation mask. It is independent of GPS — the
+    vehicle is a tracked target, not a self-locating receiver — so it is not bound
+    by the COCOM ceiling and keeps aiding EKF position through the GPS-denied coast.
+    Updates at ``GROUND_TRACK_UPDATE_HZ``; returns *None* when the vehicle is below
+    the elevation mask or off-epoch.
+
+    Args:
+        name: Station identifier.
+        lat_deg, lon_deg, alt_m: Geodetic station location.
+        rng: NumPy random generator.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        lat_deg: float,
+        lon_deg: float,
+        alt_m: float,
+        rng: np.random.Generator | None = None,
+    ) -> None:
+        self.name = name
+        self._ecef = lla_to_ecef(math.radians(lat_deg), math.radians(lon_deg), alt_m)
+        self._up = self._ecef / np.linalg.norm(self._ecef)  # geocentric local vertical
+        self._rng = rng if rng is not None else np.random.default_rng(secrets.randbits(128))
+        self._update_period_s = 1.0 / config.GROUND_TRACK_UPDATE_HZ
+        self._last_update_time_s = -1.0
+
+    def measure(self, true_state: VehicleState, dt: float) -> GroundRangeMeasurement | None:
+        """Return a noisy slant-range fix or *None* if the vehicle is not visible."""
+        if not self._is_update_epoch(true_state.time_s):
+            return None
+
+        # Line of sight and elevation in ECEF (station is fixed in ECEF).
+        veh_ecef = eci_to_ecef(true_state.position_eci, true_state.time_s)
+        los = veh_ecef - self._ecef
+        slant = float(np.linalg.norm(los))
+        if slant < 1.0:
+            return None
+        elevation = math.asin(float(np.clip(np.dot(los, self._up) / slant, -1.0, 1.0)))
+        if elevation < math.radians(config.GROUND_TRACK_ELEV_MASK_DEG):
+            return None  # below the horizon mask — no track
+
+        self._last_update_time_s = true_state.time_s
+        noise = float(self._rng.normal(0.0, config.GROUND_RANGE_NOISE_M))
+        return GroundRangeMeasurement(
+            station_position_eci=ecef_to_eci(self._ecef, true_state.time_s),
+            range_m=slant + noise,
+            station_name=self.name,
+            time_s=true_state.time_s,
+        )
+
+    def _is_update_epoch(self, time_s: float) -> bool:
+        """Check whether *time_s* falls on a ranging epoch."""
+        if self._last_update_time_s < 0.0:
+            return True
+        elapsed = time_s - self._last_update_time_s
+        return elapsed >= self._update_period_s - 1e-9
+
+
 # ---------------------------------------------------------------------------
 # Convenience bundle
 # ---------------------------------------------------------------------------
@@ -341,14 +430,23 @@ class SensorSuite:
         self.gps = GPS(rng=rng)
         self.baro = Barometer(rng=rng)
         self.star_tracker = StarTracker(rng=rng)
+        self.ground_stations = [
+            GroundStation(name, lat, lon, alt, rng=rng) for (name, lat, lon, alt) in config.GROUND_STATIONS
+        ]
 
     def update(
         self,
         true_state: VehicleState,
         specific_force_eci_mps2: np.ndarray,
         dt: float,
-    ) -> tuple[IMUMeasurement, GPSMeasurement | None, BaroMeasurement | None, StarTrackerMeasurement | None]:
-        """Poll every sensor and return measurements (None if unavailable).
+    ) -> tuple[
+        IMUMeasurement,
+        GPSMeasurement | None,
+        BaroMeasurement | None,
+        StarTrackerMeasurement | None,
+        list[GroundRangeMeasurement],
+    ]:
+        """Poll every sensor and return measurements (None / empty if unavailable).
 
         Args:
             true_state: True vehicle state from the dynamics engine.
@@ -357,10 +455,13 @@ class SensorSuite:
             dt: Physics timestep (s).
 
         Returns:
-            Tuple of (imu, gps_or_none, baro_or_none, star_tracker_or_none).
+            Tuple of (imu, gps_or_none, baro_or_none, star_tracker_or_none,
+            ground_ranges) where ``ground_ranges`` is a list with one entry per
+            station currently tracking the vehicle (possibly empty).
         """
         imu_meas = self.imu.measure(true_state, specific_force_eci_mps2, dt)
         gps_meas = self.gps.measure(true_state, dt)
         baro_meas = self.baro.measure(true_state, dt)
         star_meas = self.star_tracker.measure(true_state, dt)
-        return imu_meas, gps_meas, baro_meas, star_meas
+        ground_meas = [m for st in self.ground_stations if (m := st.measure(true_state, dt)) is not None]
+        return imu_meas, gps_meas, baro_meas, star_meas, ground_meas
