@@ -473,8 +473,9 @@
             <div class="kicker">Interactive · drag to rotate</div>
             <h2>3D ascent trajectory</h2>
             <p class="sub">
-              The powered ascent in Earth-centered inertial (ECI) coordinates, drawn to scale against
-              the globe and colored by altitude. Drag to orbit the view, scroll to zoom.
+              The powered ascent in Earth-centered inertial (ECI) coordinates, colored by altitude. The
+              default view is a side-on profile that shows off the vertical lift-off and gravity turn —
+              drag to orbit the view, scroll to zoom.
             </p>
           </div>
           <div class="panel"><div id="traj3d" class="plot-xl"></div></div>
@@ -928,6 +929,18 @@ pytest tests/ -v                          <span class="c"># run the test suite</
         return { x, y, z };
       }
 
+      // A 3D scene annotation. Plotly draws these as HTML on top of the WebGL
+      // canvas, so the label is never occluded by the globe. ax/ay are the
+      // pixel offsets of the label from the projected point.
+      function anno3d(p, text, color, ax, ay) {
+        return {
+          x: p[0], y: p[1], z: p[2], text, ax, ay,
+          showarrow: true, arrowhead: 2, arrowsize: 1, arrowwidth: 1.2, arrowcolor: color,
+          font: { color: "#f4f8ff", size: 13 },
+          bgcolor: "rgba(8,18,32,0.82)", bordercolor: color, borderpad: 3, borderwidth: 1,
+        };
+      }
+
       function renderTrajectory3D(s, m) {
         const R = m.earth_radius_km;
         const sp = sphere(R, 36);
@@ -972,29 +985,36 @@ pytest tests/ -v                          <span class="c"># run the test suite</
           hovertemplate: "t=%{customdata[0]:.0f}s · alt %{customdata[1]:.0f} km<extra></extra>",
           name: "",
         };
-        const mk = (i, color, sym, label) => ({
-          type: "scatter3d", mode: "markers+text",
-          x: [px[i]], y: [py[i]], z: [pz[i]],
+        // Markers are dots only; the labels are added as scene annotations
+        // (HTML overlays) below so they render on top of the globe and can never
+        // be occluded by it. The marker is lifted fractionally off the surface.
+        const mk = (i, color, sym, lift) => ({
+          type: "scatter3d", mode: "markers",
+          x: [px[i] * lift], y: [py[i] * lift], z: [pz[i] * lift],
           marker: { size: 6, color, symbol: sym, line: { color: "#04101f", width: 1 } },
-          text: [label], textposition: "top center", textfont: { color: C.ink, size: 12 },
           hoverinfo: "skip", showlegend: false,
         });
 
-        // Camera: zoom in on the ascent region. Aim `center` at the trajectory
-        // midpoint and view it obliquely (from the side + above) so the arc off
-        // the globe is prominent rather than a sliver on the full disc.
-        const mid = Math.floor(n / 2);
-        const v = [px[mid], py[mid], pz[mid]];
-        const L = Math.hypot(v[0], v[1], v[2]) || 1;
-        const u = [v[0] / L, v[1] / L, v[2] / L];
-        const t = [-u[1], u[0], 0];
-        const tl = Math.hypot(t[0], t[1], t[2]) || 1;
-        const center = { x: u[0] * 0.7, y: u[1] * 0.7, z: u[2] * 0.7 };
+        // Default camera: a side-on profile that shows off the vertical climb.
+        // `up` is the local vertical at the launch site, so the initial ascent
+        // points straight up on screen; the eye is offset along the trajectory-
+        // plane normal so we view the rise + gravity turn edge-on.
+        const norm = (a) => { const L = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / L, a[1] / L, a[2] / L]; };
+        const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        const start = [px[0], py[0], pz[0]];
+        const end = [px[n - 1], py[n - 1], pz[n - 1]];
+        const lk = Math.floor(n * 0.4);
+        const u = norm([px[lk], py[lk], pz[lk]]);
+        const upLocal = norm(start); // local vertical at the pad
+        let planeN = norm(cross(start, end)); // trajectory-plane normal
+        if (planeN[2] < 0) planeN = planeN.map((c) => -c); // keep a consistent side
+        const center = { x: u[0] * 0.6, y: u[1] * 0.6, z: u[2] * 0.6 };
         const eye = {
-          x: u[0] * 1.25 + (t[0] / tl) * 0.6,
-          y: u[1] * 1.25 + (t[1] / tl) * 0.6,
-          z: u[2] * 1.25 + 0.32,
+          x: u[0] * 0.9 + planeN[0] * 1.2,
+          y: u[1] * 0.9 + planeN[1] * 1.2,
+          z: u[2] * 0.9 + planeN[2] * 1.2,
         };
+        const up = { x: upLocal[0], y: upLocal[1], z: upLocal[2] };
 
         const layout = baseLayout({
           margin: { l: 0, r: 0, t: 8, b: 0 },
@@ -1006,10 +1026,14 @@ pytest tests/ -v                          <span class="c"># run the test suite</
             zaxis: axis({ title: "Z (km)", showbackground: false, showspikes: false }),
             aspectmode: "data",
             bgcolor: "rgba(0,0,0,0)",
-            camera: { eye, center },
+            camera: { eye, center, up },
+            annotations: [
+              anno3d(start, "KSC", C.ok, -36, 22),
+              anno3d(end, "Insertion", C.pink, 40, -26),
+            ],
           },
         });
-        Plotly.newPlot("traj3d", [earth, grat, path, mk(0, C.ok, "circle", "  KSC"), mk(n - 1, C.pink, "diamond", "  Insertion")], layout, PCONF);
+        Plotly.newPlot("traj3d", [earth, grat, path, mk(0, C.ok, "circle", 1.012), mk(n - 1, C.pink, "diamond", 1.0)], layout, PCONF);
       }
 
       function renderGeo(s, m) {
