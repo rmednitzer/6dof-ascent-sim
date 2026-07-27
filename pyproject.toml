@@ -38,7 +38,7 @@ Issues = "https://github.com/rmednitzer/6dof-ascent-sim/issues"
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "ruff>=0.4",
+    "ruff>=0.4,<0.17",
     "pre-commit>=3.0",
 ]
 
