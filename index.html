@@ -1,0 +1,1132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>6-DOF Launch Vehicle Ascent Simulation</title>
+    <meta
+      name="description"
+      content="A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch vehicle, from ignition through LEO insertion — with full GNC, safety systems, telemetry, and interactive 3D visualizations of a real example run."
+    />
+    <style>
+      :root {
+        --bg: #060b16;
+        --bg2: #0a1322;
+        --panel: #0e1a2dcc;
+        --panel-solid: #0e1a2d;
+        --line: #1e2d44;
+        --ink: #e8eef7;
+        --muted: #93a4bd;
+        --faint: #64748b;
+        --primary: #38bdf8;
+        --indigo: #818cf8;
+        --ok: #34d399;
+        --warn: #fbbf24;
+        --crit: #f87171;
+        --pink: #f472b6;
+        --radius: 16px;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 50px rgba(2, 8, 20, 0.55);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--bg);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--primary);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      .wrap {
+        max-width: 1160px;
+        margin: 0 auto;
+        padding: 0 22px;
+      }
+
+      /* Hero */
+      .hero {
+        position: relative;
+        overflow: hidden;
+        border-bottom: 1px solid var(--line);
+        background:
+          radial-gradient(1100px 520px at 82% -8%, rgba(56, 189, 248, 0.22), transparent 60%),
+          radial-gradient(900px 520px at 0% 0%, rgba(129, 140, 248, 0.2), transparent 55%),
+          linear-gradient(160deg, #060b16 0%, #08111f 55%, #0a1322 100%);
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          radial-gradient(1.6px 1.6px at 18% 28%, rgba(255, 255, 255, 0.55), transparent),
+          radial-gradient(1.5px 1.5px at 72% 58%, rgba(255, 255, 255, 0.4), transparent),
+          radial-gradient(1px 1px at 42% 78%, rgba(255, 255, 255, 0.45), transparent),
+          radial-gradient(1px 1px at 88% 22%, rgba(255, 255, 255, 0.35), transparent),
+          radial-gradient(1.2px 1.2px at 33% 64%, rgba(255, 255, 255, 0.3), transparent);
+        opacity: 0.7;
+        pointer-events: none;
+      }
+      .hero .wrap {
+        position: relative;
+        padding: 86px 22px 64px;
+      }
+      .eyebrow {
+        display: inline-block;
+        font-size: 12.5px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--primary);
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-size: clamp(2.1rem, 5.2vw, 3.4rem);
+        line-height: 1.08;
+        margin: 0 0 18px;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        color: #f8fafc;
+      }
+      .lede {
+        font-size: clamp(1.05rem, 2.1vw, 1.28rem);
+        color: #c2d0e4;
+        max-width: 760px;
+        margin: 0 0 26px;
+      }
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 26px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 18px;
+        border-radius: 11px;
+        font-weight: 650;
+        font-size: 0.98rem;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, #38bdf8, #6366f1);
+        color: #04121f;
+        font-weight: 750;
+      }
+      .btn-primary:hover {
+        filter: brightness(1.08);
+        text-decoration: none;
+      }
+      .btn-ghost {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: #2b3c57;
+        color: #e2e8f0;
+      }
+      .btn-ghost:hover {
+        background: rgba(255, 255, 255, 0.12);
+        text-decoration: none;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 6px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 7px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.08);
+        border: 1px solid #24405e;
+        font-size: 0.86rem;
+        color: var(--muted);
+      }
+      .chip b {
+        color: var(--ink);
+        font-weight: 700;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        font-weight: 750;
+        font-size: 0.84rem;
+        letter-spacing: 0.04em;
+        border: 1px solid transparent;
+      }
+      .badge.ok {
+        color: var(--ok);
+        background: rgba(52, 211, 153, 0.1);
+        border-color: rgba(52, 211, 153, 0.35);
+      }
+      .badge .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.18);
+      }
+
+      /* Sections */
+      section {
+        padding: 66px 0;
+      }
+      section.alt {
+        background: linear-gradient(180deg, var(--bg2), var(--bg));
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+      .head {
+        max-width: 760px;
+        margin-bottom: 30px;
+      }
+      section h2 {
+        font-size: clamp(1.55rem, 3vw, 2.1rem);
+        margin: 0 0 10px;
+        letter-spacing: -0.015em;
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--primary);
+        font-weight: 700;
+      }
+      section .sub {
+        color: var(--muted);
+        margin: 0;
+      }
+
+      /* KPI grid */
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+        gap: 14px;
+      }
+      .kpi {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 18px 18px 16px;
+        box-shadow: var(--shadow);
+        position: relative;
+        overflow: hidden;
+      }
+      .kpi::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: linear-gradient(180deg, var(--primary), var(--indigo));
+        opacity: 0.85;
+      }
+      .kpi .v {
+        font-size: 1.7rem;
+        font-weight: 800;
+        color: #f4f8ff;
+        letter-spacing: -0.01em;
+        line-height: 1.15;
+      }
+      .kpi .v small {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .kpi .l {
+        font-size: 0.74rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin-top: 4px;
+      }
+
+      /* Plot panels */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 10px 12px 6px;
+      }
+      .plot-xl {
+        width: 100%;
+        height: 540px;
+      }
+      .plot-geo {
+        width: 100%;
+        height: 560px;
+      }
+      .charts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+        gap: 16px;
+      }
+      .chart {
+        width: 100%;
+        height: 270px;
+      }
+      .strip {
+        width: 100%;
+        height: 130px;
+      }
+      .cap {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin: 14px 2px 0;
+      }
+      .cap b {
+        color: var(--ink);
+      }
+      .legendrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin: 12px 2px 0;
+        font-size: 0.84rem;
+        color: var(--muted);
+      }
+      .legendrow span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .sw {
+        width: 22px;
+        height: 0;
+        border-top: 2px dashed currentColor;
+        display: inline-block;
+      }
+      .sw.solid {
+        border-top-style: solid;
+      }
+
+      /* Feature grid */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 20px;
+        box-shadow: var(--shadow);
+        transition:
+          transform 0.15s ease,
+          border-color 0.15s ease;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        border-color: #2c4a6e;
+      }
+      a.card:hover {
+        text-decoration: none;
+      }
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 1.05rem;
+        color: var(--ink);
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+      .card .ico {
+        font-size: 1.45rem;
+        margin-bottom: 10px;
+        display: block;
+      }
+
+      pre {
+        background: #050a13;
+        color: #d7e3f4;
+        border: 1px solid var(--line);
+        padding: 18px 20px;
+        border-radius: var(--radius);
+        overflow-x: auto;
+        font-size: 0.92rem;
+        line-height: 1.75;
+        box-shadow: var(--shadow);
+      }
+      pre .c {
+        color: #5c7da6;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+
+      .disclaimer {
+        background: rgba(251, 191, 36, 0.07);
+        border: 1px solid rgba(251, 191, 36, 0.3);
+        color: #f6cf7d;
+        border-radius: 12px;
+        padding: 13px 16px;
+        font-size: 0.9rem;
+        margin-top: 22px;
+      }
+      .note {
+        color: var(--faint);
+        font-size: 0.82rem;
+        margin-top: 10px;
+      }
+      .fallback {
+        display: none;
+        width: 100%;
+        border-radius: var(--radius);
+        border: 1px solid var(--line);
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 30px 0 44px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      footer .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: var(--faint);
+        font-size: 0.8rem;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="wrap">
+        <span class="eyebrow">Flight dynamics · GNC · 6-DOF</span>
+        <h1>6-DOF Launch Vehicle<br />Ascent Simulation</h1>
+        <p class="lede">
+          A high-fidelity six-degree-of-freedom simulation of a two-stage orbital launch vehicle —
+          from ignition through low-Earth-orbit insertion — with full guidance, navigation &amp;
+          control, safety systems, structural dynamics, and telemetry. Every chart below is the
+          <b>real telemetry</b> from one nominal example run.
+        </p>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/rmednitzer/6dof-ascent-sim">★ View on GitHub</a>
+          <a class="btn btn-ghost" href="#trajectory">Explore the 3D trajectory ↓</a>
+        </div>
+        <div class="chips" id="heroChips">
+          <span class="badge ok" id="heroOutcome"><span class="dot"></span>SUCCESS</span>
+          <span class="chip">Orbit <b id="heroOrbit">466 × 140 km</b></span>
+          <span class="chip">Inclination <b id="heroIncl">51.0°</b></span>
+          <span class="chip">Flight time <b id="heroTime">496 s</b></span>
+          <span class="chip">Integration <b>100 Hz RK4</b></span>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- Mission at a glance -->
+      <section>
+        <div class="wrap">
+          <div class="head">
+            <div class="kicker">Example run</div>
+            <h2>Mission at a glance</h2>
+            <p class="sub">
+              A nominal ascent targeting a 400&nbsp;km × 51.6° low-Earth orbit. These figures are read
+              live from the committed telemetry of the run visualized on this page.
+            </p>
+          </div>
+          <div class="kpis" id="kpis">
+            <div class="kpi"><div class="v" id="kOutcome">SUCCESS</div><div class="l">Outcome</div></div>
+            <div class="kpi"><div class="v" id="kOrbit">466 × 140 <small>km</small></div><div class="l">Apogee × Perigee</div></div>
+            <div class="kpi"><div class="v" id="kIncl">51.05<small>°</small></div><div class="l">Inclination (target 51.6°)</div></div>
+            <div class="kpi"><div class="v" id="kVel">7613 <small>m/s</small></div><div class="l">Insertion velocity</div></div>
+            <div class="kpi"><div class="v" id="kTime">496 <small>s</small></div><div class="l">Flight time</div></div>
+            <div class="kpi"><div class="v" id="kQ">90.6<small>%</small></div><div class="l">Peak dynamic pressure / limit</div></div>
+            <div class="kpi"><div class="v" id="kG">5.40 <small>g</small></div><div class="l">Peak axial load</div></div>
+            <div class="kpi"><div class="v" id="kMach">11.7</div><div class="l">Peak Mach</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3D trajectory -->
+      <section id="trajectory" class="alt">
+        <div class="wrap">
+          <div class="head">
+            <div class="kicker">Interactive · drag to rotate</div>
+            <h2>3D ascent &amp; projected orbit</h2>
+            <p class="sub">
+              The powered ascent (bright, altitude-colored) in Earth-centered inertial coordinates,
+              rising into the <b>projected orbit</b> it reaches — the achieved 466&nbsp;×&nbsp;140&nbsp;km
+              LEO propagated one revolution (cyan). Drag to orbit the view, scroll to zoom.
+            </p>
+          </div>
+          <div class="panel"><div id="traj3d" class="plot-xl"></div></div>
+          <img class="fallback" id="traj3dFallback" src="dashboard.png" alt="Mission dashboard (static fallback)." />
+          <p class="cap">
+            From <b id="capLaunch">Kennedy Space Center</b> up to insertion at
+            <b id="capApo">~466 km apogee</b>, then the projected orbit (cyan) the vehicle coasts onto.
+            Radial altitude is exaggerated ~10× so the climb and orbit stand off the 6,378&nbsp;km globe;
+            the colorbar encodes true ascent altitude.
+          </p>
+        </div>
+      </section>
+
+      <!-- Telemetry dashboard -->
+      <section>
+        <div class="wrap">
+          <div class="head">
+            <div class="kicker">Flight telemetry</div>
+            <h2>Eight channels, one ascent</h2>
+            <p class="sub">
+              Decimated from <b id="capFrames">49,630</b> internal frames recorded at 100&nbsp;Hz.
+              Dashed red lines are structural / target limits; amber marks stage separation, violet
+              marks max-Q. Hover any plot for values.
+            </p>
+          </div>
+          <div class="charts" id="charts">
+            <div class="panel"><div id="cAlt" class="chart"></div></div>
+            <div class="panel"><div id="cVel" class="chart"></div></div>
+            <div class="panel"><div id="cQ" class="chart"></div></div>
+            <div class="panel"><div id="cG" class="chart"></div></div>
+            <div class="panel"><div id="cMass" class="chart"></div></div>
+            <div class="panel"><div id="cThr" class="chart"></div></div>
+            <div class="panel"><div id="cMach" class="chart"></div></div>
+            <div class="panel"><div id="cEkf" class="chart"></div></div>
+          </div>
+
+          <div class="head" style="margin: 34px 0 14px">
+            <h2 style="font-size: 1.25rem">Vehicle health timeline</h2>
+            <p class="sub">
+              The safety monitor classifies every frame against structural, navigation, and propellant
+              margins. It runs <b>NOMINAL</b> for most of the flight, flags <b>WARNING</b> as dynamic
+              pressure and axial load peak near ~90% of their limits, and goes briefly
+              <b>CRITICAL</b> during the stage-1 burnout coast (empty tank, zero thrust) just before
+              separation. The flight-termination system never armed.
+            </p>
+          </div>
+          <div class="panel"><div id="cHealth" class="strip"></div></div>
+          <img class="fallback" id="dashFallback" src="dashboard.png" alt="Mission dashboard (static fallback)." />
+          <p class="note">
+            Prefer a single static image? The 8-panel
+            <a href="dashboard.png">dashboard.png</a> is generated by
+            <code>examples/run_and_visualize.py</code>.
+          </p>
+        </div>
+      </section>
+
+      <!-- Ground track -->
+      <section class="alt">
+        <div class="wrap">
+          <div class="head">
+            <div class="kicker">Ground track · orthographic</div>
+            <h2>From the Cape to orbit</h2>
+            <p class="sub">
+              The sub-vehicle point projected onto the globe, colored by altitude — an eastward,
+              high-inclination ascent over the Atlantic. Drag to spin the Earth.
+            </p>
+          </div>
+          <div class="panel"><div id="geo" class="plot-geo"></div></div>
+          <img class="fallback" id="geoFallback" src="ground_track.png" alt="Ascent ground track (static fallback)." />
+          <p class="cap">Markers: <b style="color: #34d399">▲ launch</b> · <b style="color: #f472b6">★ insertion</b>.</p>
+        </div>
+      </section>
+
+      <!-- What it models -->
+      <section>
+        <div class="wrap">
+          <div class="head">
+            <div class="kicker">Under the hood</div>
+            <h2>What it models</h2>
+            <p class="sub">
+              Every major subsystem of an orbital ascent, integrated at 100&nbsp;Hz and validated
+              against authoritative references.
+            </p>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <span class="ico">🚀</span>
+              <h3>6-DOF rigid-body dynamics</h3>
+              <p>Quaternion attitude (scalar-last), RK4 integration at a 100 Hz fixed timestep.</p>
+            </div>
+            <div class="card">
+              <span class="ico">🌍</span>
+              <h3>WGS84 gravity + J2</h3>
+              <p>Oblate-Earth geopotential with the J2 zonal harmonic from the analytic gradient.</p>
+            </div>
+            <div class="card">
+              <span class="ico">💨</span>
+              <h3>US Standard Atmosphere 1976</h3>
+              <p>Altitude-dependent density with a wind profile and discrete gusts.</p>
+            </div>
+            <div class="card">
+              <span class="ico">🔥</span>
+              <h3>Two-stage propulsion</h3>
+              <p>Pressure-dependent thrust with conserved mass flow and ignition/shutdown transients.</p>
+            </div>
+            <div class="card">
+              <span class="ico">🎯</span>
+              <h3>Three-phase guidance</h3>
+              <p>Vertical rise, gravity turn, and Powered Explicit Guidance (PEG) with plane steering.</p>
+            </div>
+            <div class="card">
+              <span class="ico">🎛️</span>
+              <h3>PID + TVC control</h3>
+              <p>Gain-scheduled attitude control driving a second-order thrust-vector actuator.</p>
+            </div>
+            <div class="card">
+              <span class="ico">🛰️</span>
+              <h3>15-state error-state EKF</h3>
+              <p>Position, velocity, attitude, and accel/gyro-bias estimation with GPS, baro, star-tracker and ground-range aiding.</p>
+            </div>
+            <div class="card">
+              <span class="ico">🛡️</span>
+              <h3>Safety systems</h3>
+              <p>Boundary enforcement, live health monitoring, and an autonomous flight-termination system.</p>
+            </div>
+            <div class="card">
+              <span class="ico">〰️</span>
+              <h3>Structural dynamics</h3>
+              <p>Live flex-body bending modes stabilised by a frequency-scheduled notch filter, plus propellant slosh.</p>
+            </div>
+            <div class="card">
+              <span class="ico">🎲</span>
+              <h3>Monte Carlo</h3>
+              <p>Parallel dispersion campaigns with an experimental SLURM HPC backend.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick start -->
+      <section class="alt">
+        <div class="wrap">
+          <div class="head">
+            <div class="kicker">Run it yourself</div>
+            <h2>Quick start</h2>
+            <p class="sub">Install, run the ascent, and regenerate every visualization on this page.</p>
+          </div>
+          <pre><code><span class="c"># clone &amp; install</span>
+git clone https://github.com/rmednitzer/6dof-ascent-sim
+cd 6dof-ascent-sim
+pip install -e ".[dev]"
+
+<span class="c"># run the full ascent (writes telemetry to output/)</span>
+python -m sim.main
+
+<span class="c"># dashboard + ground-track PNGs, then the interactive site data</span>
+python examples/run_and_visualize.py
+python examples/export_web_telemetry.py   <span class="c"># -> site/data/telemetry.json</span>
+
+pytest tests/ -v                          <span class="c"># run the test suite</span></code></pre>
+        </div>
+      </section>
+
+      <!-- Documentation -->
+      <section>
+        <div class="wrap">
+          <div class="head">
+            <div class="kicker">Read more</div>
+            <h2>Documentation</h2>
+            <p class="sub">Design notes, modelling assumptions, and safety analysis.</p>
+          </div>
+          <div class="grid">
+            <a class="card" href="https://github.com/rmednitzer/6dof-ascent-sim/blob/main/docs/architecture.md">
+              <h3>Architecture →</h3>
+              <p>System design and data flow.</p>
+            </a>
+            <a class="card" href="https://github.com/rmednitzer/6dof-ascent-sim/blob/main/docs/assumptions.md">
+              <h3>Assumptions →</h3>
+              <p>Modelling assumptions and simplifications.</p>
+            </a>
+            <a class="card" href="https://github.com/rmednitzer/6dof-ascent-sim/blob/main/docs/stpa-analysis.md">
+              <h3>STPA analysis →</h3>
+              <p>System-theoretic safety analysis.</p>
+            </a>
+            <a class="card" href="https://github.com/rmednitzer/6dof-ascent-sim/tree/main/docs/adr">
+              <h3>Decision records →</h3>
+              <p>Architecture Decision Records (ADRs).</p>
+            </a>
+          </div>
+          <div class="disclaimer">
+            ⚠️ Educational / research simulation. Not suitable for flight certification, launch
+            licensing, or operational mission planning.
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        6-DOF Launch Vehicle Ascent Simulation ·
+        <a href="https://github.com/rmednitzer/6dof-ascent-sim">GitHub</a> · Apache 2.0
+        <div class="mono" id="provenance"></div>
+      </div>
+    </footer>
+
+    <!-- Plotly.js, version-pinned and subresource-integrity checked. -->
+    <script
+      src="https://cdn.plot.ly/plotly-2.35.2.min.js"
+      integrity="sha384-cCVCZkAjYNxaYKbM8lsArLznDF/SvMFr1jcZrvOpSTCa0W40ZAdLzHCEulnUa5i7"
+      crossorigin="anonymous"
+      charset="utf-8"
+    ></script>
+    <script>
+      "use strict";
+
+      // ---- Theme -----------------------------------------------------------
+      const C = {
+        ink: "#e8eef7",
+        muted: "#93a4bd",
+        grid: "rgba(148,163,184,0.12)",
+        primary: "#38bdf8",
+        indigo: "#818cf8",
+        ok: "#34d399",
+        warn: "#fbbf24",
+        alert: "#fb923c",
+        crit: "#f87171",
+        pink: "#f472b6",
+        violet: "#a78bfa",
+        amber: "#f59e0b",
+        limit: "#fb7185",
+      };
+      const FONT = { family: "ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif", color: C.muted, size: 11.5 };
+      const PCONF = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d"] };
+
+      const hexA = (hex, a) => {
+        const n = parseInt(hex.slice(1), 16);
+        return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+      };
+
+      function axis(extra) {
+        return Object.assign(
+          { gridcolor: C.grid, zeroline: false, linecolor: C.grid, tickfont: FONT, titlefont: FONT, automargin: true },
+          extra || {}
+        );
+      }
+      function baseLayout(extra) {
+        return Object.assign(
+          {
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor: "rgba(0,0,0,0)",
+            font: FONT,
+            margin: { l: 56, r: 16, t: 34, b: 42 },
+            title: { font: { color: C.ink, size: 14 }, x: 0.02, xanchor: "left" },
+            hovermode: "x unified",
+            hoverlabel: { bgcolor: "#0b1626", bordercolor: C.grid, font: { color: C.ink, size: 12 } },
+            showlegend: false,
+          },
+          extra || {}
+        );
+      }
+
+      // ---- Fallback to static images when interactive render is unavailable.
+      function showFallbacks(msg) {
+        ["traj3dFallback", "geoFallback"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.style.display = "block";
+        });
+        const t = document.getElementById("traj3d");
+        if (t) t.style.display = "none";
+        const g = document.getElementById("geo");
+        if (g) g.style.display = "none";
+        const ch = document.getElementById("charts");
+        if (ch) ch.style.display = "none";
+        if (msg) console.warn(msg);
+      }
+
+      // ---- Formatting helpers ---------------------------------------------
+      const fmt = (x, d = 0) => Number(x).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+
+      function fillText(id, v) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = v;
+      }
+
+      // ---- Main render -----------------------------------------------------
+      function render(data) {
+        const m = data.meta;
+        const s = data.series;
+        const ev = m.events || {};
+        const T = s.t;
+
+        // KPIs + hero chips ------------------------------------------------
+        const orbitStr = `${fmt(m.orbit.apogee_km)} × ${fmt(m.orbit.perigee_km)}`;
+        const qPct = (m.peak_q_kpa / m.limits.max_q_kpa) * 100;
+        fillText("heroOutcome", m.outcome);
+        document.getElementById("heroOutcome").innerHTML = `<span class="dot"></span>${m.outcome}`;
+        fillText("heroOrbit", `${orbitStr} km`);
+        fillText("heroIncl", `${fmt(m.orbit.inclination_deg, 1)}°`);
+        fillText("heroTime", `${fmt(m.final_time_s)} s`);
+
+        fillText("kOutcome", m.outcome);
+        document.getElementById("kOrbit").innerHTML = `${orbitStr} <small>km</small>`;
+        document.getElementById("kIncl").innerHTML = `${fmt(m.orbit.inclination_deg, 2)}<small>°</small>`;
+        document.getElementById("kVel").innerHTML = `${fmt(m.final_velocity_ms)} <small>m/s</small>`;
+        document.getElementById("kTime").innerHTML = `${fmt(m.final_time_s)} <small>s</small>`;
+        document.getElementById("kQ").innerHTML = `${fmt(qPct, 1)}<small>%</small>`;
+        document.getElementById("kG").innerHTML = `${fmt(m.peak_axial_g, 2)} <small>g</small>`;
+        fillText("kMach", fmt(m.peak_mach, 1));
+
+        fillText("capLaunch", m.launch_site.name);
+        fillText("capApo", `~${fmt(m.orbit.apogee_km)} km apogee`);
+        fillText("capFrames", fmt(m.frames_internal));
+        fillText(
+          "provenance",
+          `Telemetry: ${fmt(m.frames_internal)} frames @ 100 Hz · ${m.n_points} plotted · ` +
+            `orbit ${orbitStr} km @ ${fmt(m.orbit.inclination_deg, 2)}°, period ${fmt(m.orbit.period_min, 1)} min · ` +
+            `sha256 ${String(m.telemetry_hash_sha256).slice(0, 16)}…`
+        );
+
+        // Event marker shapes / annotations for the time-series plots ------
+        function eventShapes() {
+          const sh = [];
+          if (ev.staging_s != null)
+            sh.push({ type: "line", xref: "x", yref: "paper", x0: ev.staging_s, x1: ev.staging_s, y0: 0, y1: 1, line: { color: C.amber, width: 1.3, dash: "dash" } });
+          if (ev.max_q_s != null)
+            sh.push({ type: "line", xref: "x", yref: "paper", x0: ev.max_q_s, x1: ev.max_q_s, y0: 0, y1: 1, line: { color: C.violet, width: 1.3, dash: "dot" } });
+          return sh;
+        }
+
+        // Generic time-series panel ---------------------------------------
+        function ts(id, y, o) {
+          const shapes = eventShapes();
+          if (o.limit != null)
+            shapes.push({ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: o.limit, y1: o.limit, line: { color: C.limit, width: 1.4, dash: "dash" } });
+          if (o.mach1)
+            shapes.push({ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: 1, y1: 1, line: { color: C.muted, width: 1, dash: "dot" } });
+          const color = o.color || C.primary;
+          const trace = {
+            x: T,
+            y,
+            type: "scatter",
+            mode: "lines",
+            line: { color, width: 2.1, shape: "spline", smoothing: 0.4 },
+            fill: o.fill === false ? "none" : "tozeroy",
+            fillcolor: hexA(color, 0.1),
+            hovertemplate: `%{y:${o.hf || ".0f"}} ${o.unit || ""}<extra></extra>`,
+            name: "",
+          };
+          const layout = baseLayout({
+            title: { text: o.title, font: { color: C.ink, size: 13 }, x: 0.02, xanchor: "left" },
+            xaxis: axis({ title: "Time (s)" }),
+            yaxis: axis(Object.assign({ title: o.yt }, o.yr ? { range: o.yr } : {})),
+            shapes,
+            height: 270,
+          });
+          Plotly.newPlot(id, [trace], layout, PCONF);
+        }
+
+        ts("cAlt", s.alt_km, { title: "Altitude", yt: "km", color: C.primary, limit: m.targets.altitude_km, hf: ".0f", unit: "km" });
+        ts("cVel", s.vel_ms, { title: "Inertial velocity", yt: "m/s", color: C.indigo, limit: m.targets.velocity_ms, hf: ".0f", unit: "m/s" });
+        ts("cQ", s.q_kpa, { title: "Dynamic pressure", yt: "kPa", color: "#22d3ee", limit: m.limits.max_q_kpa, hf: ".1f", unit: "kPa" });
+        ts("cG", s.axial_g, { title: "Axial G-load", yt: "g", color: "#f97316", limit: m.limits.max_axial_g, hf: ".2f", unit: "g" });
+        ts("cMass", s.mass_t, { title: "Vehicle mass", yt: "tonnes", color: "#a3e635", hf: ".1f", unit: "t" });
+        ts("cThr", s.throttle_pct, { title: "Throttle command", yt: "%", color: C.ok, hf: ".0f", unit: "%", yr: [-3, 108] });
+        ts("cMach", s.mach, { title: "Mach number", yt: "Mach", color: C.pink, mach1: true, hf: ".2f", unit: "" });
+        ts("cEkf", s.ekf_m, { title: "EKF position uncertainty", yt: "m (1σ)", color: "#facc15", fill: false, hf: ".0f", unit: "m" });
+
+        // Health timeline strip (discrete heatmap) ------------------------
+        renderHealth(s, ev, m);
+
+        // 3D trajectory + ground track ------------------------------------
+        renderTrajectory3D(s, m, data.projected);
+        renderGeo(s, m);
+      }
+
+      function renderHealth(s, ev, m) {
+        const labels = m.health_legend || { 0: "NOMINAL", 1: "WARNING", 2: "ALERT", 3: "CRITICAL" };
+        const text = [s.health.map((c) => labels[c] || c)];
+        const shapes = [];
+        if (ev.staging_s != null)
+          shapes.push({ type: "line", xref: "x", yref: "paper", x0: ev.staging_s, x1: ev.staging_s, y0: 0, y1: 1, line: { color: "#e2e8f0", width: 1.2, dash: "dash" } });
+        const trace = {
+          x: s.t,
+          y: ["health"],
+          z: [s.health],
+          text,
+          type: "heatmap",
+          zmin: 0,
+          zmax: 3,
+          colorscale: [
+            [0.0, C.ok],
+            [0.25, C.ok],
+            [0.25, C.warn],
+            [0.5, C.warn],
+            [0.5, C.alert],
+            [0.75, C.alert],
+            [0.75, C.crit],
+            [1.0, C.crit],
+          ],
+          showscale: false,
+          xgap: 0,
+          ygap: 0,
+          hovertemplate: "t=%{x:.0f}s · %{text}<extra></extra>",
+        };
+        const layout = baseLayout({
+          title: { text: "Health status (green NOMINAL · amber WARNING · red CRITICAL)" },
+          margin: { l: 56, r: 16, t: 34, b: 40 },
+          xaxis: axis({ title: "Time (s)" }),
+          yaxis: axis({ showticklabels: false, ticks: "" }),
+          shapes,
+          height: 130,
+          hovermode: "closest",
+        });
+        Plotly.newPlot("cHealth", [trace], layout, PCONF);
+      }
+
+      // Parametric sphere for the Earth.
+      function sphere(R, n) {
+        const X = [], Y = [], Z = [];
+        for (let i = 0; i <= n; i++) {
+          const v = (i / n) * Math.PI;
+          const xr = [], yr = [], zr = [];
+          for (let j = 0; j <= n; j++) {
+            const u = (j / n) * 2 * Math.PI;
+            xr.push(R * Math.cos(u) * Math.sin(v));
+            yr.push(R * Math.sin(u) * Math.sin(v));
+            zr.push(R * Math.cos(v));
+          }
+          X.push(xr); Y.push(yr); Z.push(zr);
+        }
+        return { X, Y, Z };
+      }
+
+      // Lat/lon graticule as a single broken-line trace.
+      function graticule(R) {
+        const x = [], y = [], z = [];
+        const push = (la, lo) => {
+          const a = (la * Math.PI) / 180, b = (lo * Math.PI) / 180;
+          x.push(R * Math.cos(a) * Math.cos(b));
+          y.push(R * Math.cos(a) * Math.sin(b));
+          z.push(R * Math.sin(a));
+        };
+        for (let la = -60; la <= 60; la += 30) {
+          for (let lo = 0; lo <= 360; lo += 5) push(la, lo);
+          x.push(null); y.push(null); z.push(null);
+        }
+        for (let lo = 0; lo < 360; lo += 30) {
+          for (let la = -90; la <= 90; la += 5) push(la, lo);
+          x.push(null); y.push(null); z.push(null);
+        }
+        return { x, y, z };
+      }
+
+      // A 3D scene annotation. Plotly draws these as HTML on top of the WebGL
+      // canvas, so the label is never occluded by the globe. ax/ay are the
+      // pixel offsets of the label from the projected point.
+      function anno3d(p, text, color, ax, ay) {
+        return {
+          x: p[0], y: p[1], z: p[2], text, ax, ay,
+          showarrow: true, arrowhead: 2, arrowsize: 1, arrowwidth: 1.2, arrowcolor: color,
+          font: { color: "#f4f8ff", size: 13 },
+          bgcolor: "rgba(8,18,32,0.82)", bordercolor: color, borderpad: 3, borderwidth: 1,
+        };
+      }
+
+      function renderTrajectory3D(s, m, proj) {
+        const R = m.earth_radius_km;
+        const sp = sphere(R, 36);
+        const gr = graticule(R * 1.001);
+        const n = s.x_km.length;
+        const cd = s.x_km.map((_, i) => [s.t[i], s.alt_km[i]]);
+
+        // The ascent is a ~400 km shell on a 6,378 km globe — invisible to scale.
+        // Exaggerate the *radial* altitude so the climb reads clearly; the
+        // downrange direction (and thus the ground path) stays to scale.
+        const EXAG = 10;
+        const px = new Array(n), py = new Array(n), pz = new Array(n);
+        for (let i = 0; i < n; i++) {
+          const x = s.x_km[i], y = s.y_km[i], z = s.z_km[i];
+          const r = Math.hypot(x, y, z) || 1;
+          const f = (R + (r - R) * EXAG) / r;
+          px[i] = x * f; py[i] = y * f; pz[i] = z * f;
+        }
+
+        const earth = {
+          type: "surface",
+          x: sp.X, y: sp.Y, z: sp.Z,
+          surfacecolor: sp.Z,
+          colorscale: [[0, "#071a30"], [0.5, "#0c3358"], [1, "#114b80"]],
+          showscale: false,
+          opacity: 0.96,
+          hoverinfo: "skip",
+          lighting: { ambient: 0.85, diffuse: 0.5, specular: 0.04, roughness: 0.9 },
+          contours: { x: { highlight: false }, y: { highlight: false }, z: { highlight: false } },
+        };
+        const grat = {
+          type: "scatter3d", mode: "lines",
+          x: gr.x, y: gr.y, z: gr.z,
+          line: { color: "rgba(148,197,255,0.16)", width: 1 },
+          hoverinfo: "skip", showlegend: false,
+        };
+        const path = {
+          type: "scatter3d", mode: "lines",
+          x: px, y: py, z: pz,
+          line: { width: 8, color: s.alt_km, colorscale: "Viridis", colorbar: { title: { text: "Alt (km)", font: FONT }, tickfont: FONT, thickness: 12, len: 0.62, x: 0.98, outlinewidth: 0 } },
+          customdata: cd,
+          hovertemplate: "t=%{customdata[0]:.0f}s · alt %{customdata[1]:.0f} km<extra></extra>",
+          name: "",
+        };
+
+        // Projected trajectory: the achieved orbit propagated one revolution from
+        // insertion (same radial exaggeration), so it joins the ascent arc
+        // seamlessly and shows the LEO the vehicle has reached.
+        let projTraces = [];
+        if (proj && Array.isArray(proj.x_km) && proj.x_km.length) {
+          const m2 = proj.x_km.length;
+          const qx = new Array(m2), qy = new Array(m2), qz = new Array(m2);
+          for (let i = 0; i < m2; i++) {
+            const x = proj.x_km[i], y = proj.y_km[i], z = proj.z_km[i];
+            const r = Math.hypot(x, y, z) || 1;
+            const f = (R + (r - R) * EXAG) / r;
+            qx[i] = x * f; qy[i] = y * f; qz[i] = z * f;
+          }
+          projTraces = [
+            {
+              type: "scatter3d", mode: "lines",
+              x: qx, y: qy, z: qz,
+              line: { color: "rgba(125,211,252,0.55)", width: 3 },
+              hovertemplate: "projected orbit<extra></extra>",
+              name: "Projected orbit", showlegend: false,
+            },
+          ];
+        }
+        // Markers are dots only; the labels are added as scene annotations
+        // (HTML overlays) below so they render on top of the globe and can never
+        // be occluded by it. The marker is lifted fractionally off the surface.
+        const mk = (i, color, sym, lift) => ({
+          type: "scatter3d", mode: "markers",
+          x: [px[i] * lift], y: [py[i] * lift], z: [pz[i] * lift],
+          marker: { size: 6, color, symbol: sym, line: { color: "#04101f", width: 1 } },
+          hoverinfo: "skip", showlegend: false,
+        });
+
+        // Default camera: frame the whole Earth + projected orbit, viewed
+        // obliquely to the orbit plane so the orbit reads as an ellipse and the
+        // bright ascent arc is seen rising into it. `up` is the local vertical at
+        // the launch site so the ascent still points broadly upward.
+        const norm = (a) => { const L = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / L, a[1] / L, a[2] / L]; };
+        const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        const start = [px[0], py[0], pz[0]];
+        const end = [px[n - 1], py[n - 1], pz[n - 1]];
+        let cx = 0, cy = 0, cz = 0;
+        for (let i = 0; i < n; i++) { cx += px[i]; cy += py[i]; cz += pz[i]; }
+        const u = norm([cx, cy, cz]); // direction to the ascent centroid
+        const upLocal = norm(start); // local vertical at the pad
+        let planeN = norm(cross(start, end)); // orbit-plane normal
+        if (planeN[2] < 0) planeN = planeN.map((c) => -c); // keep a consistent side
+        const eyeDir = norm([
+          u[0] * 0.5 + planeN[0] * 0.9,
+          u[1] * 0.5 + planeN[1] * 0.9,
+          u[2] * 0.5 + planeN[2] * 0.9,
+        ]);
+        const D = 2.35;
+        const center = { x: 0, y: 0, z: 0 };
+        const eye = { x: eyeDir[0] * D, y: eyeDir[1] * D, z: eyeDir[2] * D };
+        const up = { x: upLocal[0], y: upLocal[1], z: upLocal[2] };
+
+        const layout = baseLayout({
+          margin: { l: 0, r: 0, t: 8, b: 0 },
+          height: 540,
+          hovermode: "closest",
+          scene: {
+            // Hide the Cartesian km axes/grid/panes — meaningless for a globe
+            // view and just clutter; the colorbar and labels carry the scale.
+            xaxis: { visible: false },
+            yaxis: { visible: false },
+            zaxis: { visible: false },
+            aspectmode: "data",
+            bgcolor: "rgba(0,0,0,0)",
+            camera: { eye, center, up },
+            annotations: [
+              anno3d(start, "KSC", C.ok, -36, 22),
+              anno3d(end, "Insertion", C.pink, 40, -26),
+            ],
+          },
+        });
+        Plotly.newPlot("traj3d", [earth, grat, ...projTraces, path, mk(0, C.ok, "circle", 1.012), mk(n - 1, C.pink, "diamond", 1.0)], layout, PCONF);
+      }
+
+      function renderGeo(s, m) {
+        const ls = m.launch_site;
+        const track = {
+          type: "scattergeo", mode: "lines",
+          lon: s.lon, lat: s.lat,
+          line: { color: "rgba(56,189,248,0.45)", width: 1.5 },
+          hoverinfo: "skip",
+        };
+        const pts = {
+          type: "scattergeo", mode: "markers",
+          lon: s.lon, lat: s.lat,
+          marker: { size: 4, color: s.alt_km, colorscale: "Viridis", colorbar: { title: { text: "Alt (km)", font: FONT }, tickfont: FONT, thickness: 12, len: 0.6, outlinewidth: 0 }, line: { width: 0 } },
+          customdata: s.alt_km.map((a, i) => [s.t[i], a]),
+          hovertemplate: "t=%{customdata[0]:.0f}s · %{lat:.1f}°, %{lon:.1f}° · %{customdata[1]:.0f} km<extra></extra>",
+        };
+        const launch = {
+          type: "scattergeo", mode: "markers",
+          lon: [s.lon[0]], lat: [s.lat[0]],
+          marker: { size: 11, color: C.ok, symbol: "triangle-up", line: { color: "#04101f", width: 1 } },
+          name: "Launch", hovertemplate: `${ls.name}<extra></extra>`,
+        };
+        const ins = {
+          type: "scattergeo", mode: "markers",
+          lon: [s.lon[s.lon.length - 1]], lat: [s.lat[s.lat.length - 1]],
+          marker: { size: 13, color: C.pink, symbol: "star", line: { color: "#04101f", width: 1 } },
+          name: "Insertion", hovertemplate: "Insertion<extra></extra>",
+        };
+        const layout = baseLayout({
+          margin: { l: 0, r: 0, t: 8, b: 0 },
+          height: 560,
+          showlegend: false,
+          hovermode: "closest",
+          geo: {
+            projection: { type: "orthographic", rotation: { lon: ls.lon, lat: ls.lat } },
+            center: { lon: ls.lon, lat: ls.lat },
+            bgcolor: "rgba(0,0,0,0)",
+            showland: true, landcolor: "#16263f",
+            showocean: true, oceancolor: "#081628",
+            showcountries: true, countrycolor: "rgba(148,163,184,0.18)",
+            coastlinecolor: "rgba(148,197,255,0.35)", coastlinewidth: 0.8,
+            showlakes: false,
+            lonaxis: { showgrid: true, gridcolor: "rgba(148,163,184,0.12)" },
+            lataxis: { showgrid: true, gridcolor: "rgba(148,163,184,0.12)" },
+          },
+        });
+        Plotly.newPlot("geo", [track, pts, launch, ins], layout, PCONF);
+      }
+
+      // ---- Boot ------------------------------------------------------------
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof Plotly === "undefined") {
+          showFallbacks("Plotly failed to load.");
+          return;
+        }
+        fetch("data/telemetry.json")
+          .then((r) => {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(render)
+          .catch((e) => showFallbacks("Telemetry load failed: " + e.message));
+      });
+    </script>
+  </body>
+</html>
