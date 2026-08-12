@@ -20,10 +20,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-    "numpy>=1.24",
-    "scipy>=1.10",
-    "matplotlib>=3.7",
-    "pydantic>=2",
+    "numpy>=1.24,<3",
+    "scipy>=1.10,<2",
+    "matplotlib>=3.7,<4",
+    "pydantic>=2,<3",
 ]
 
 [project.urls]
@@ -36,10 +36,10 @@ Issues = "https://github.com/rmednitzer/6dof-ascent-sim/issues"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
+    "pytest>=7.0,<10",
+    "pytest-cov>=4.0,<8",
     "ruff>=0.4,<0.17",
-    "pre-commit>=3.0",
+    "pre-commit>=3.0,<5",
 ]
 
 [tool.pytest.ini_options]
