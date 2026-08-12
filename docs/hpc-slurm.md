@@ -127,16 +127,20 @@ output, so existing `sim.montecarlo.statistics` analysis/plots apply unchanged.
 ```python
 from sim.montecarlo.hpc import CampaignSpec, SlurmConfig, submit_campaign, collect_shards
 
-spec = CampaignSpec(num_runs=5000, seed=42, runs_per_task=100,
-                    output_dir="/scratch/me/mc_run1")
-slurm = SlurmConfig(partition="cpu", account="myproj", time_limit="00:30:00",
-                    cpus_per_task=4, max_concurrent=50,
-                    preamble=("module load python/3.11", "source venv/bin/activate"))
+spec = CampaignSpec(num_runs=5000, seed=42, runs_per_task=100, output_dir="/scratch/me/mc_run1")
+slurm = SlurmConfig(
+    partition="cpu",
+    account="myproj",
+    time_limit="00:30:00",
+    cpus_per_task=4,
+    max_concurrent=50,
+    preamble=("module load python/3.11", "source venv/bin/activate"),
+)
 
-plan = submit_campaign(spec, slurm, submit=True)   # submit=False => dry run
+plan = submit_campaign(spec, slurm, submit=True)  # submit=False => dry run
 print(plan.array_job_id, plan.collect_job_id)
 
-results = collect_shards(spec)                      # after the array finishes
+results = collect_shards(spec)  # after the array finishes
 ```
 
 ## Security note
