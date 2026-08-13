@@ -1,0 +1,65 @@
+6dof-ascent-sim
+Copyright 2026 Roman Mednitzer
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+-------------------------------------------------------------------------------
+Third-party components
+-------------------------------------------------------------------------------
+
+No third-party code is vendored into this source tree. The runtime dependencies
+declared in pyproject.toml are installed from PyPI and remain under their own
+licenses:
+
+  * NumPy       -- BSD-3-Clause
+  * SciPy       -- BSD-3-Clause
+  * Matplotlib  -- Matplotlib License (PSF-based, BSD-compatible)
+  * Pydantic    -- MIT
+
+Development dependencies (pytest, pytest-cov, ruff, pre-commit) are not part of
+any distributed artifact.
+
+-------------------------------------------------------------------------------
+Reference models and standards
+-------------------------------------------------------------------------------
+
+The simulation implements published, non-proprietary models. They are recorded
+here as provenance, not as licensed material: no code was copied from any
+reference implementation, and each model is implemented independently from its
+published description.
+
+Standards, both public-domain U.S. Government publications:
+
+  * U.S. Standard Atmosphere, 1976 -- the seven standard lapse-rate layers to
+    86 km (sim/environment/atmosphere.py). Above 86 km the model continues with
+    a piecewise-exponential thermosphere approximation, which is this project's
+    own extension and not part of the 1976 standard.
+  * WGS 84 geodetic datum, per NIMA TR8350.2 -- reference ellipsoid and the
+    J2 through J6 zonal harmonics (sim/environment/gravity.py).
+
+Textbook derivations consulted for the astrodynamics formulations, cited in the
+relevant module docstrings:
+
+  * Vallado, "Fundamentals of Astrodynamics and Applications", 4th ed.
+  * Montenbruck and Gill, "Satellite Orbits", 3rd ed.
+
+These are copyrighted works. Nothing from them is reproduced here; they are
+listed so a reader can check the derivations against their source.
+
+-------------------------------------------------------------------------------
+Scope
+-------------------------------------------------------------------------------
+
+This is an engineering simulation for study and analysis. It is not flight
+software, it is not qualified for operational use, and it carries no safety
+certification. See the "AS IS" disclaimer above.
