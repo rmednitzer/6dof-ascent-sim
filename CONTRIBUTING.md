@@ -31,7 +31,7 @@ Thank you for your interest in contributing to the 6-DOF Launch Vehicle Ascent S
 ## Pull Request Process
 
 1. Fill in the pull request template.
-2. Ensure CI passes (lint + tests on Python 3.11, 3.12, and 3.13).
+2. Ensure CI passes (lint, type checking, and tests on Python 3.11, 3.12, 3.13, and 3.14).
 3. Describe what you changed and why in the PR description.
 
 ## Reporting Issues
