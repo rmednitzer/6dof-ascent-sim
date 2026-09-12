@@ -27,7 +27,7 @@ jobs:
         # CI never disagree on lint/format rules. The pyproject dev floor
         # names the same minor line, so a plain `pip install -e ".[dev]"`
         # cannot resolve a ruff that formats differently from this one.
-        run: pip install "ruff==0.16.1"
+        run: pip install "ruff==0.16.6"
       - name: Ruff check
         run: ruff check .
       - name: Ruff format check
