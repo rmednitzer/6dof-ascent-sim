@@ -36,7 +36,7 @@ ruff format .                  # Auto-format
 - `sim/orbital/` — Orbit propagation, maneuvers, decay analysis
 - `sim/montecarlo/` — Parallel dispatcher, dispersions, statistics
 - `sim/analysis/` — Post-flight trajectory plots
-- `tests/` — pytest suite (10 modules)
+- `tests/` — pytest suite (24 modules)
 
 ## Conventions
 
