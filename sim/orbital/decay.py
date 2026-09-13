@@ -227,9 +227,6 @@ def estimate_lifetime(
         # Orbital period
         period = 2.0 * math.pi * math.sqrt(a**3 / mu)
 
-        # Periapsis velocity (vis-viva)
-        _v_p = math.sqrt(mu * (2.0 / r_periapsis - 1.0 / a))  # noqa: F841
-
         # King-Hele: change in semi-major axis per orbit
         # For an elliptical orbit: da/rev = -2*pi * rho_p * (a^2 / BC) * I0(e*a/H)
         # For moderate eccentricity use the approximation:

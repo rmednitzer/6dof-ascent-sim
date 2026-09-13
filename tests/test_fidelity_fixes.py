@@ -315,6 +315,53 @@ class TestStatisticsEmpty:
 
 
 # --------------------------------------------------------------------------- #
+# compute_statistics surfaces EKF-uncertainty proximity to the FTS covariance
+# abort limit. Previously computed into `_peak_ekf` and discarded as an unused
+# variable, so a Monte Carlo campaign summary could not show how close
+# dispersed runs came to this limit — exactly the margin ADR 0023
+# (ground-station tracking, N-01) was driving toward zero aborts.
+# --------------------------------------------------------------------------- #
+class TestStatisticsPeakEkfProximity:
+    @staticmethod
+    def _result(peak_ekf_uncertainty_m: float, run_index: int = 0):
+        from sim.montecarlo.dispatcher import MonteCarloResult
+
+        return MonteCarloResult(
+            run_index=run_index,
+            seed=run_index,
+            outcome="SUCCESS",
+            dispersed_params={},
+            insertion_altitude_m=None,
+            insertion_velocity_ms=None,
+            insertion_fpa_deg=None,
+            insertion_inclination_deg=None,
+            peak_q_pa=0.0,
+            peak_axial_g=0.0,
+            peak_ekf_uncertainty_m=peak_ekf_uncertainty_m,
+            boundary_clamp_count=0,
+            fts_trigger_time_s=None,
+            total_time_s=0.0,
+        )
+
+    def test_peak_ekf_pct_present_and_correct(self):
+        from sim.montecarlo.statistics import compute_statistics
+
+        results = [self._result(config.FTS_COVARIANCE_LIMIT_M * f, i) for i, f in enumerate([0.1, 0.5, 1.0])]
+        stats = compute_statistics(results)
+
+        assert "peak_ekf_pct" in stats["limit_proximity"]
+        ekf_pct = stats["limit_proximity"]["peak_ekf_pct"]
+        assert ekf_pct["max"] == pytest.approx(100.0)
+        assert ekf_pct["mean"] == pytest.approx((10.0 + 50.0 + 100.0) / 3.0)
+
+    def test_empty_results_no_crash(self):
+        from sim.montecarlo.statistics import compute_statistics
+
+        stats = compute_statistics([])
+        assert stats["limit_proximity"]["peak_ekf_pct"]["max"] == 0.0
+
+
+# --------------------------------------------------------------------------- #
 # AD-16 — eci_to_ned accounts for Earth rotation (and takes time_s)
 # --------------------------------------------------------------------------- #
 class TestEciToNed:
