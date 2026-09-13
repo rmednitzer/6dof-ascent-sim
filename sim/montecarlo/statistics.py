@@ -70,7 +70,7 @@ def compute_statistics(results: list[MonteCarloResult]) -> dict:
 
     peak_q = np.array([r.peak_q_pa for r in results])
     peak_g = np.array([r.peak_axial_g for r in results])
-    _peak_ekf = np.array([r.peak_ekf_uncertainty_m for r in results])  # noqa: F841
+    peak_ekf = np.array([r.peak_ekf_uncertainty_m for r in results])
     clamps = np.array([r.boundary_clamp_count for r in results])
 
     stats["limit_proximity"] = {
@@ -83,6 +83,18 @@ def compute_statistics(results: list[MonteCarloResult]) -> dict:
             "mean": float(np.mean(peak_g) / config.MAX_AXIAL_G * 100) if n > 0 else 0.0,
             "max": float(np.max(peak_g) / config.MAX_AXIAL_G * 100) if n > 0 else 0.0,
             "p99": float(np.percentile(peak_g, 99) / config.MAX_AXIAL_G * 100) if n > 0 else 0.0,
+        },
+        # EKF position-uncertainty proximity to the FTS covariance-abort limit
+        # (the third of the FTS's four independent criteria). Previously
+        # computed (as `_peak_ekf`) but discarded as an unused variable
+        # instead of being surfaced here, so a Monte Carlo campaign could not
+        # show how close dispersed runs came to this limit even though it is
+        # exactly the margin the N-01 ground-station-tracking work (ADR 0023)
+        # was driving to zero aborts on.
+        "peak_ekf_pct": {
+            "mean": float(np.mean(peak_ekf) / config.FTS_COVARIANCE_LIMIT_M * 100) if n > 0 else 0.0,
+            "max": float(np.max(peak_ekf) / config.FTS_COVARIANCE_LIMIT_M * 100) if n > 0 else 0.0,
+            "p99": float(np.percentile(peak_ekf, 99) / config.FTS_COVARIANCE_LIMIT_M * 100) if n > 0 else 0.0,
         },
     }
     stats["boundary_clamps"] = {
@@ -136,6 +148,10 @@ def print_summary(results: list[MonteCarloResult]) -> None:
     print(
         f"  Peak G:    mean {lp['peak_g_pct']['mean']:.1f}%, "
         f"max {lp['peak_g_pct']['max']:.1f}%, P99 {lp['peak_g_pct']['p99']:.1f}%"
+    )
+    print(
+        f"  Peak EKF:  mean {lp['peak_ekf_pct']['mean']:.1f}%, "
+        f"max {lp['peak_ekf_pct']['max']:.1f}%, P99 {lp['peak_ekf_pct']['p99']:.1f}%"
     )
 
     bc = stats["boundary_clamps"]

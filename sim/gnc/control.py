@@ -180,7 +180,13 @@ class AttitudeController:
         elif self._integral_yaw < -int_limit:
             self._integral_yaw = -int_limit
 
-        # PID law using scheduled gains
+        # PID law using scheduled gains. The yaw channel is negated relative to
+        # pitch: with the gimbal aft of the CoM (moment arm r = (-L, 0, 0) in
+        # sim.main), torque_y = +L*Fz but torque_z = -L*Fy, so a positive yaw
+        # TVC deflection (+Fy) produces a *negative* body-Z torque while a
+        # positive pitch deflection (+Fz) produces a *positive* body-Y torque.
+        # Negating the yaw command here keeps both channels acting in the
+        # sense of ``err`` (Q-07).
         cmd_pitch_rad = self._kp * err_pitch - self._kd * rate_pitch + self._ki * self._integral_pitch
         cmd_yaw_rad = -(self._kp * err_yaw - self._kd * rate_yaw + self._ki * self._integral_yaw)
 
