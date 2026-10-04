@@ -24,10 +24,10 @@ jobs:
           cache: "pip"
       - name: Install ruff
         # Pinned to match .pre-commit-config.yaml so local pre-commit and
-        # CI never disagree on lint/format rules. The pyproject dev floor
-        # names the same minor line, so a plain `pip install -e ".[dev]"`
-        # cannot resolve a ruff that formats differently from this one.
-        run: pip install "ruff==0.16.6"
+        # CI never disagree on lint/format rules. The pyproject dev extra
+        # pins this exact version too, so a plain `pip install -e ".[dev]"`
+        # cannot resolve a different formatter.
+        run: pip install "ruff==0.16.9"
       - name: Ruff check
         run: ruff check .
       - name: Ruff format check
@@ -46,7 +46,7 @@ jobs:
         # then a pinned pyright so a future release cannot introduce new findings.
         run: |
           pip install -e .
-          pip install "pyright==1.1.410"
+          pip install "pyright==1.1.414"
       - name: Pyright (static type check on sim/)
         # Scope, target Python version, and mode live in pyrightconfig.json.
         run: pyright
