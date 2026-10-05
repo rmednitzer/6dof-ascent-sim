@@ -27,7 +27,7 @@ jobs:
         # CI never disagree on lint/format rules. The pyproject dev extra
         # pins this exact version too, so a plain `pip install -e ".[dev]"`
         # cannot resolve a different formatter.
-        run: pip install "ruff==0.16.9"
+        run: pip install "ruff==0.16.10"
       - name: Ruff check
         run: ruff check .
       - name: Ruff format check
