@@ -3,6 +3,7 @@
 ## Repository-specific workflow
 
 Python ascent simulation, not flight-qualified control software. Read `docs/architecture.md`, `docs/assumptions.md`, `docs/stpa-analysis.md`, and relevant `docs/adr/` decisions.
+
 - `sim/config.py` and `sim/config_schema.py` own configuration; `sim/core/` owns integration and frames; `sim/gnc/`, `sim/vehicle/`, and `sim/safety/` own control, staging, and simulated protection.
 - Preserve SI units, scalar-last quaternions `[x, y, z, w]`, reference-frame conventions, fixed-step RK4 contract, explicit safety branches, and configuration isolation. Do not alter numerical tolerances or golden trajectories solely to pass tests.
 - For GNC, staging, boundary enforcement, FTS, or health changes, update existing STPA IDs and test threshold boundaries, hysteresis, stale/missing sensor feedback, non-finite inputs, and transition ordering. Monte Carlo results require seeds, configuration, sample size, and model limits.
@@ -127,6 +128,7 @@ product, edition, profile and justified exceptions. Preserve existing CTL-/POL- 
 Do not infer legal applicability, ISO conformance or certification from a mapping.
 
 Primary references:
+
 - [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final)
 - [OWASP ASVS](https://owasp.org/www-project-application-security-verification-standard/)
 - [MIT STPA handbook](https://psas.scripts.mit.edu/home/books-and-handbooks/)
