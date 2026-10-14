@@ -1,46 +1,15 @@
-# CLAUDE.md — Project context for Claude Code
+# Claude Code guidance: 6dof-ascent-sim
 
-## Project
+@AGENTS.md
 
-6-DOF launch vehicle ascent simulation (Python 3.11+). Simulates two-stage orbital vehicle from ignition through LEO insertion with full GNC, safety systems, and telemetry.
+## Use of this file
 
-## Build & Run
+The imported AGENTS.md is the canonical repository workflow and secure development
+contract. Read SECURITY.md before security-sensitive changes and applicable
+source, tests and ADRs before implementation. Read nested CLAUDE.md/AGENTS.md files
+for touched subtrees; do not infer that an import or prompt enforces a runtime
+security control. Keep durable rules in AGENTS.md rather than duplicating them here.
 
-```bash
-pip install -e ".[dev]"       # Install with dev dependencies
-python -m sim.main             # Run simulation
-python -m sim.main --no-flex   # Disable flex body model
-python -m sim.main --no-slosh  # Disable slosh model
-```
-
-## Test & Lint
-
-```bash
-pytest tests/ -v               # Run all tests
-ruff check .                   # Lint
-ruff format --check .          # Format check
-ruff format .                  # Auto-format
-```
-
-## Architecture
-
-- `sim/config.py` — Single source of truth for all parameters (~100 constants)
-- `sim/main.py` — Main simulation loop (100 Hz RK4 integration)
-- `sim/core/` — State dataclass, RK4 integrator, reference frame transforms
-- `sim/environment/` — Atmosphere, gravity (WGS84+J2), wind models
-- `sim/vehicle/` — Propulsion, aerodynamics, staging state machine
-- `sim/dynamics/` — Flex body bending modes, propellant slosh
-- `sim/gnc/` — Guidance (3-phase), PID control + TVC, 15-error-state EKF, sensors
-- `sim/safety/` — Boundary enforcement, FTS abort, health monitoring
-- `sim/telemetry/` — Recording schemas, dual-rate recorder
-- `sim/orbital/` — Orbit propagation, maneuvers, decay analysis
-- `sim/montecarlo/` — Parallel dispatcher, dispersions, statistics
-- `sim/analysis/` — Post-flight trajectory plots
-- `tests/` — pytest suite (24 modules)
-
-## Conventions
-
-- Quaternions use scalar-last `[x, y, z, w]` convention
-- All units SI (meters, seconds, kilograms, radians)
-- Ruff linter with 120 char line length
-- Safety-critical code uses explicit nested ifs (SIM102 ignored) for readability
+Preserve task scope, existing work and required checks. Use deterministic local
+tests by default; verify operation identity and postconditions before retrying a
+timed-out mutation. Report skipped checks and uncertainty explicitly.
