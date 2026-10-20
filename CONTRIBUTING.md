@@ -45,3 +45,12 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
 ## License
 
 By contributing you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
+
+
+## Dependency automation
+
+Renovate policy is owned by this repository in `renovate.json5`. It does not
+inherit another project’s policy. Keep update grouping, release-age delays,
+major-version review and lock-maintenance behavior explicit here. Built-in
+Renovate presets supply standard defaults; repository-specific decisions remain
+local. Review policy changes and actual dependency extraction before merging.
